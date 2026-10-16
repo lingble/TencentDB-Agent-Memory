@@ -708,7 +708,7 @@ export async function runOpenaiChatPipeline(
   // 收下但不知道怎么渲染 → 卡死在 pending。此时需要降级走文字模式
   // （content chunk + markdown + 纯文字解析）。
   //
-  // 其他客户端（codebuddy / claude-code / dsh / codex / opencode / hermes /
+  // 其他客户端（codebuddy / claude-code / dsh / codex / opencode /
   // openclaw）一律 askUserQuestion=true，保持既有行为不变。dsh headless 场景走
   // 上面独立的 _dshHeadless bypass 分支，不受本探测影响。
   const { detectClientCapabilities } = await import("../../session/client-capabilities.js");

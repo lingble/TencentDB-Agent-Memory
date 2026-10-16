@@ -1,5 +1,5 @@
 /**
- * AssetScopeManager — 统一的「资产可配置范围」管理视图。
+ * AssetScopeManager — unified management view for "asset configurable scope".
  */
 
 import { useTranslation } from 'react-i18next';
@@ -24,7 +24,7 @@ export interface AssetScopeItem {
   meta?: string;
 }
 
-/** Owner 标签：显示 display_name（未命中回退 id），title 保留 user_id。抽子组件因 .map 内不能调 hook。 */
+/** Owner label: shows display_name (falls back to id on miss), title keeps user_id. Extracted as a child component because hooks can't be called inside .map. */
 function ScopeOwnerLabel({ ownerId, isMe }: { ownerId: string; isMe: boolean }) {
   const { t } = useTranslation();
   const name = useUserDisplayName(ownerId);
@@ -71,11 +71,11 @@ export default function AssetScopeManager({
           <span className="_memory-asset-scope-alert-em">
             <UsergroupIcon size={12} /> {t('assetScope.team')}
           </span>
-          （{t('assetScope.team.desc')}）{t('assetScope.or')}
+          {' '}({t('assetScope.team.desc')}) {t('assetScope.or')}{' '}
           <span className="_memory-asset-scope-alert-em">
             <LockOnIcon size={12} /> {t('assetScope.private')}
           </span>
-          （{t('assetScope.private.desc')}）。{t('assetScope.manageHint')}
+          {' '}({t('assetScope.private.desc')}). {t('assetScope.manageHint')}
         </div>
       </Alert>
 

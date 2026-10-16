@@ -1,19 +1,19 @@
 /**
- * code-constants —— Code 资产页的常量、类型与纯工具函数。
- * 从 CodeSourcesPanel.tsx 拆出。
+ * code-constants - constants, types and pure utility functions for the Code asset page.
+ * Split out of CodeSourcesPanel.tsx.
  *
- * 通用资产类型与 formatShortTime 已收敛到 @/lib/asset-common，此处 re-export
- * 保持原有 import 路径不变。
+ * Common asset types and formatShortTime have moved to @/lib/asset-common; they are re-exported here
+ * to keep the existing import paths unchanged.
  */
 export type { SubView, ViewMode, StatusFilter, ScopeTab } from '@/lib/asset-common';
 export { formatShortTime } from '@/lib/asset-common';
 
 /**
- * 校验是否为合法的 HTTP(S) Git 仓库地址（正则匹配）。
- * 要求：http/https 协议、host 含点（真实域名）、路径不含空格且以 .git 结尾。
- * 用正则而非 URL 解析 —— new URL() 会接受路径中的空格（如 /a b/repo.git），
- * 且不强制 .git 后缀，均不符合 code graph 注册的严格约束。
- * SSH（git@...）不在此判定为 true —— SSH 由 isSshGitUrl / isValidGitUrl 判定。
+ * Check whether this is a valid HTTP(S) Git repo URL (regex match).
+ * Requirements: http/https scheme, host contains a dot (real domain), path has no spaces and ends with .git.
+ * Regex instead of URL parsing - new URL() accepts spaces in the path (e.g. /a b/repo.git)
+ * and doesn't enforce the .git suffix, neither of which meets the strict constraints of code graph registration.
+ * SSH (git@...) is not treated as true here - SSH is checked by isSshGitUrl / isValidGitUrl.
  */
 const GIT_HTTP_URL_RE = /^https?:\/\/[^\s/]+\.[^\s/]+\/[^\s]+\.git$/i;
 export function isValidGitHttpUrl(raw: string): boolean {
@@ -21,12 +21,12 @@ export function isValidGitHttpUrl(raw: string): boolean {
 }
 
 /**
- * SSH Git 仓库地址正则。两种写法：
- *   - scp 写法：`git@host:namespace/repo.git`（host 可以是域名或内网主机名）
- *   - 标准写法：`ssh://[user@]host[:port]/namespace/repo.git`（端口可选，默认 22）
+ * SSH Git repo URL regex. Two forms:
+ *   - scp form: `git@host:namespace/repo.git` (host may be a domain or an internal hostname)
+ *   - standard form: `ssh://[user@]host[:port]/namespace/repo.git` (port optional, default 22)
  *
- * 约束与 HTTPS 版对齐：路径不含空格、以 .git 结尾。
- * 不放开 `git://`（明文、无认证），也不放开 file://（本地路径）。
+ * Constraints match the HTTPS version: no spaces in the path, ends with .git.
+ * `git://` (plaintext, no auth) and file:// (local path) are not allowed.
  */
 const GIT_SSH_SCP_RE = /^git@[^\s/:@]+:[^\s]+\.git$/i;
 const GIT_SSH_URL_RE = /^ssh:\/\/(?:[^\s/@]+@)?[^\s/:@]+(?::\d+)?\/[^\s]+\.git$/i;
@@ -36,24 +36,24 @@ export function isSshGitUrl(raw: string): boolean {
   return GIT_SSH_SCP_RE.test(v) || GIT_SSH_URL_RE.test(v);
 }
 
-/** 注册表单的统一地址校验：HTTP(S) 或 SSH 任一合法即通过。 */
+/** Unified URL check for the registration form: passes if either HTTP(S) or SSH is valid. */
 export function isValidGitUrl(raw: string): boolean {
   return isValidGitHttpUrl(raw) || isSshGitUrl(raw);
 }
 
-/** SSH 来源在「来源」下拉里的 id（与 KS 的 SSH_PROVIDER_ID 保持一致）。 */
+/** id of the SSH source in the "source" dropdown (kept in sync with KS's SSH_PROVIDER_ID). */
 export const SSH_SOURCE_ID = 'ssh';
 
 /**
- * 从 Git URL 提取可读的仓库名称。
+ * Extract a readable repo name from a Git URL.
  *
- * repo_name 可能为空（旧数据），此时回退到 URL 会显得很长。
- * 这里从 URL 中提取最后两段路径作为 `namespace/repo` 格式：
+ * repo_name may be empty (old data), in which case falling back to the URL looks very long.
+ * Here the last two path segments of the URL are extracted in `namespace/repo` format:
  *   https://<host>/namespace/repo.git → namespace/repo
  *   https://<host>/org/project.git → org/project
  *   https://<host>/group/sub/repo.git → sub/repo
- * 如果只有一段路径，直接返回该段（去掉 .git 后缀）。
- * 解析失败时返回原始 URL（保底）。
+ * If there is only one path segment, return it directly (without the .git suffix).
+ * On parse failure return the original URL (fallback).
  */
 export function formatRepoName(repoName: string, repoUrl: string): string {
   if (repoName && !repoName.startsWith('http')) return repoName;

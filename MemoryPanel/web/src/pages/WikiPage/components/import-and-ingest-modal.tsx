@@ -1,20 +1,20 @@
 /**
- * ImportAndIngestModal —— 设计 2026-09-21 合并后的单一导入入口。
+ * ImportAndIngestModal - the single import entry after the 2026-09-21 design merge.
  *
- * 替代原详情页顶栏的「添加」+「Ingest」两个按钮：
- *   - 一个 Modal 承载 tab（file / markdown / external）；
- *   - 底部**只有一个**主按钮，文案随当前 tab 与输入变化：
- *       file / markdown 有输入 → 「上传并抽取」
- *       external 已勾选页面    → 「导入并抽取」
- *       均无输入              → 「重新抽取」
- *   - loading 文案统一「处理中…」（不区分取消/上传/抽取阶段）；
- *   - 打断旧任务是 onBusy:'replace' 的后台逻辑，UI 不提示、无 Alert；
- *   - 无次要按钮（不再保留"仅添加素材"两阶段能力）。
+ * Replaces the former "Add" + "Ingest" buttons in the detail page's top bar:
+ *   - one Modal hosts the tabs (file / markdown / external);
+ *   - the footer has **only one** primary button, whose label changes with the current tab and input:
+ *       file / markdown with input -> "Upload and extract"
+ *       external with pages checked -> "Import and extract"
+ *       no input                    -> "Re-extract"
+ *   - the loading label is uniformly "Processing..." (no distinction between cancel/upload/extract phases);
+ *   - interrupting the old task is onBusy:'replace' backend logic; the UI shows no hint and no Alert;
+ *   - no secondary button (the two-phase "add materials only" capability is no longer kept).
  *
- * external tab 完整复用原「添加」Modal 的外部来源流程（设计 §4.3"结构复用"）：
- * 选 Provider → 填凭据 → 填来源地址 → 选遍历策略 → 拉取文档树 → 勾选页面；
- * 状态与动作（fetchWikiTree / ensureCredential 等）全部来自 useWikiSources，
- * 由 wiki-detail-view 在打开 Modal 时通过 openAddDocExternal 初始化。
+ * The external tab fully reuses the external-source flow of the former "Add" Modal (design §4.3 "structural reuse"):
+ * pick Provider -> fill credentials -> fill source URL -> pick traversal strategy -> fetch document tree -> check pages;
+ * state and actions (fetchWikiTree / ensureCredential etc.) all come from useWikiSources,
+ * initialized by wiki-detail-view via openAddDocExternal when opening the Modal.
  */
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -61,7 +61,7 @@ interface ExternalFlowProps {
 
 interface Props {
   visible: boolean;
-  /** 外部来源类型（iWiki 等）；有值时只显示 external tab。 */
+  /** External source type (iWiki etc.); when set, only the external tab is shown. */
   sourceType?: string | null;
   submitting: boolean;
   external?: ExternalFlowProps;
@@ -69,7 +69,7 @@ interface Props {
   onSubmit: (payload: ImportSubmitPayload) => void | Promise<void>;
 }
 
-/** 主按钮文案：按 tab 语义化（设计 §2）。 */
+/** Primary button label: semantic per tab (design §2). */
 function primaryLabel(mode: ImportMode, hasInput: boolean, t: (k: string) => string): string {
   if (!hasInput) return t('wiki.import.reingest');
   if (mode === 'external') return t('wiki.import.importAndIngest');
@@ -94,7 +94,7 @@ export function ImportAndIngestModal({
   const [mdContent, setMdContent] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 打开时重置手工输入（external 状态由 openAddDocExternal 在打开时初始化）
+  // Reset manual input on open (external state is initialized by openAddDocExternal on open)
   useEffect(() => {
     if (!visible) return;
     setTab(isExternal ? 'external' : 'file');
@@ -112,7 +112,7 @@ export function ImportAndIngestModal({
 
   const hasFileInput = files.length > 0;
   const hasMdInput = mdFilename.trim().length > 0 && mdContent.trim().length > 0;
-  // external 的"有输入"= 已勾选页面（必须先拉树并勾选，与原流程一致）
+  // "Has input" for external = pages checked (the tree must be fetched and checked first, consistent with the original flow)
   const ext = external;
   const hasExternalInput = isExternal ? (ext?.selectedPageIds.length ?? 0) > 0 : false;
 
@@ -234,7 +234,7 @@ export function ImportAndIngestModal({
           <TabPanel id="external">
             {ext && (
               <div className="_wiki-detail-external-panel" style={{ paddingTop: 8 }}>
-                {/* 来源选择 */}
+                {/* Source selection */}
                 <div style={{ marginBottom: 12 }}>
                   <div style={{ marginBottom: 4 }}>{t('wiki.register.source')}</div>
                   <Select
@@ -242,7 +242,7 @@ export function ImportAndIngestModal({
                     value={ext.formSourceType}
                     onChange={(v) => {
                       ext.setFormSourceType(v);
-                      // 切换来源清空已勾选页面
+                      // Switching source clears checked pages
                       ext.setSelectedPageIds([]);
                     }}
                     options={[
@@ -256,7 +256,7 @@ export function ImportAndIngestModal({
                   />
                 </div>
 
-                {/* 凭据字段（按 form_fields 动态渲染）—— 已存凭据时不再要求重填 */}
+                {/* Credential fields (rendered dynamically from form_fields) - not required again when credentials are stored */}
                 {ext.formSourceType && !ext.credConfigured && (
                   <>
                     <Alert type="info">{t('wiki.register.credHint')}</Alert>
@@ -298,7 +298,7 @@ export function ImportAndIngestModal({
                   </>
                 )}
 
-                {/* 来源地址 */}
+                {/* Source URL */}
                 {ext.formSourceType && (
                   <div style={{ marginBottom: 12 }}>
                     <div style={{ marginBottom: 4 }}>{t('wiki.register.sourceUrl')}</div>
@@ -314,7 +314,7 @@ export function ImportAndIngestModal({
                   </div>
                 )}
 
-                {/* 遍历策略：决定从来源地址出发如何发现文档 */}
+                {/* Traversal strategy: decides how documents are discovered starting from the source URL */}
                 {ext.formSourceType && (
                   <div style={{ marginBottom: 12 }}>
                     <div style={{ marginBottom: 4 }}>{t('wiki.register.crawlMode')}</div>
@@ -335,7 +335,7 @@ export function ImportAndIngestModal({
                   </div>
                 )}
 
-                {/* 拉取按钮：未存凭据 → 先存再拉（存凭据是拉树的前提） */}
+                {/* Fetch button: no stored credentials -> save first, then fetch (stored credentials are a prerequisite for fetching the tree) */}
                 {ext.formSourceType && (
                   <Button
                     type="primary"
@@ -352,7 +352,7 @@ export function ImportAndIngestModal({
                   </Button>
                 )}
 
-                {/* 文档树勾选（按 parentId 还原层级，目录可折叠/快捷全选） */}
+                {/* Document tree checkboxes (hierarchy restored by parentId; folders collapsible / quick select-all) */}
                 {ext.treeResult && (
                   <div>
                     <WikiSourcePageTree
@@ -384,8 +384,8 @@ export function ImportAndIngestModal({
         </Tabs>
       </Modal.Body>
       <Modal.Footer>
-        {/* 设计 §2.3：不再保留两阶段能力 —— 只有这一个主按钮，无次要按钮。
-            树底不再放独立「导入」按钮，统一由 footer 主按钮提交。 */}
+        {/* Design §2.3: the two-phase capability is no longer kept - there's only this one primary button, no secondary button.
+            No separate "Import" button below the tree; submission is unified through the footer primary button. */}
         <Button type="primary" onClick={handleSubmit} disabled={!canSubmit} loading={submitting}>
           {primaryLabel(mode, hasInput, t)}
         </Button>

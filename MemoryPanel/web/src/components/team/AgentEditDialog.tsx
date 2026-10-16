@@ -1,16 +1,16 @@
 /**
- * AgentEditDialog —— 编辑/查看 Agent 弹窗。
+ * AgentEditDialog — edit/view Agent dialog.
  *
- * 编辑范围约定：
- *   - 名称、一句话描述、角色 prompt / 规则 prompt 可编辑保存。
- *   - 资源能力可直接在本弹窗勾选/解绑并保存：
- *     · Wiki 知识库 / CodeGraph → allocate / unbind（引用绑定，增量 diff）
- *     · Chat Memory → setAgentFixed（全量覆盖，天然处理增删；不含 agent 自身 memory）
- *     · Skill → 仍只读展示。skill 的「挂载」语义是 fork 出 owner=该 agent 的独立副本
- *       （见 skillApi.forkToAgent），在编辑弹窗里做增删副本涉及乐观锁与归档，
- *       风险高，本期不放开，保留在「创建 Agent」/技能管理页维护。
+ * Edit scope conventions:
+ *   - Name, one-line description, role prompt / rules prompt are editable and savable.
+ *   - Resource capabilities can be checked/unbound and saved directly in this dialog:
+ *     · Wiki knowledge base / CodeGraph → allocate / unbind (reference binding, incremental diff)
+ *     · Chat Memory → setAgentFixed (full overwrite, naturally handles adds/removes; excludes the agent's own memory)
+ *     · Skill → still read-only. A skill's "mount" semantics is forking an independent replica with owner = that agent
+ *       (see skillApi.forkToAgent); adding/removing replicas in the edit dialog involves optimistic locking and archiving,
+ *       which is high-risk, so it's not enabled this iteration and stays in "Create Agent" / the skill management page.
  *
- * 资源已绑定态读真实绑定源（skill 表 owner_agent_id + agent-fixed-asset 表），与运行时一致。
+ * Bound resource state reads the real binding sources (skill table owner_agent_id + agent-fixed-asset table), consistent with runtime.
  */
 
 import { useState, useMemo, useEffect } from 'react';
@@ -43,18 +43,18 @@ export default function AgentEditDialog({
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [memoryOpen, setMemoryOpen] = useState(false);
 
-  // 资源可编辑：用真实绑定源填充初始勾选态。
+  // Resources are editable: populate the initial checked state from the real binding sources.
   const [skills, setSkills] = useState<string[]>([]);
   const [codeGraphs, setCodeGraphs] = useState<string[]>([]);
   const [llmWikis, setLlmWikis] = useState<string[]>([]);
   const [chatMemories, setChatMemories] = useState<string[]>([selfChatMemoryId]);
-  // 初始绑定快照：保存时与当前勾选对比算增删 diff（skill 只读不参与 diff）。
+  // Initial binding snapshot: compared with the current selection on save to compute the add/remove diff (skill is read-only and excluded).
   const [initialCodeGraphs, setInitialCodeGraphs] = useState<string[]>([]);
   const [initialWikis, setInitialWikis] = useState<string[]>([]);
   const [initialChatMemories, setInitialChatMemories] = useState<string[]>([selfChatMemoryId]);
   const [savingAssets, setSavingAssets] = useState(false);
-  // agent 真实拥有但可能不在 team 资产池的绑定项（如 skill fork 副本、借入的 memory），
-  // 注入资产池以保证「已绑定」项都能显示、数量与 list 卡片一致。
+  // Bindings the agent really owns but that may not be in the team asset pool (e.g. skill fork replicas, borrowed memory)
+  // are injected into the asset pool so all "bound" items show up and counts match the list card.
   const [realSkillItems, setRealSkillItems] = useState<Array<{ key: string; title: string }>>([]);
   const [realCodeGraphIds, setRealCodeGraphIds] = useState<string[]>([]);
   const [realWikiIds, setRealWikiIds] = useState<string[]>([]);
@@ -64,10 +64,10 @@ export default function AgentEditDialog({
   const assets = useTeamAssets(agent.team_id);
   const { t } = useTranslation();
 
-  // 加载态编排：
-  //   assets.loading —— 团队资产池在加载（4 个折叠组都用资产池数据）
-  //   realBindingsLoaded —— 真实绑定源已就绪（决定折叠组 count 是否可信）
-  // 任一未就绪 → 折叠组走骨架占位，避免「已选 0/共 0 → 真实数字」跳变。
+  // Loading state orchestration:
+  //   assets.loading — the team asset pool is loading (all 4 collapsible groups use asset pool data)
+  //   realBindingsLoaded — the real binding sources are ready (decides whether collapsible group counts are trustworthy)
+  // If either isn't ready → collapsible groups show skeleton placeholders, avoiding a jump from "0 selected / 0 total → real numbers".
   const bindingsLoading = assets.loading || !realBindingsLoaded;
 
   function injectBound<T extends { key: string; title: string; group: string; slug: string }>(
@@ -119,8 +119,8 @@ export default function AgentEditDialog({
     return Array.from(map.values());
   }, [agent.name, realChatMemoryIds, assets.chatMemories, selfChatMemoryId]);
 
-  // 可编辑：展示团队资产池全集（含已绑定与未绑定），供用户勾选/取消。
-  // skill 仍只读，只展示已绑定项（fork 语义，见文件头说明）。
+  // Editable: show the full team asset pool (bound and unbound) for the user to check/uncheck.
+  // skill stays read-only, showing only bound items (fork semantics, see the file header).
   const boundSkills = useMemo(
     () => skillsAssets.filter((a) => skills.includes(a.key)),
     [skillsAssets, skills],
@@ -130,7 +130,7 @@ export default function AgentEditDialog({
     setList(list.includes(key) ? list.filter((k) => k !== key) : [...list, key]);
   }
 
-  // 资产是否相对初始绑定发生变化（用于启用保存按钮）
+  // Whether assets changed relative to the initial binding (used to enable the save button)
   const sameSet = (a: string[], b: string[]) =>
     a.length === b.length && a.every((x) => b.includes(x));
   const assetsChanged =
@@ -146,7 +146,7 @@ export default function AgentEditDialog({
   const agentChanged = promptChanged || assetsChanged;
   const saving = savingPrompt || savingAssets;
 
-  /** 保存资产绑定 diff：wiki / code_graph 走 allocate/unbind，chat_memory 走全量 setAgentFixed。 */
+  /** Save the asset binding diff: wiki / code_graph use allocate/unbind, chat_memory uses full setAgentFixed. */
   async function saveAssetBindings() {
     // Wiki
     for (const id of llmWikis.filter((x) => !initialWikis.includes(x))) {
@@ -162,7 +162,7 @@ export default function AgentEditDialog({
     for (const id of initialCodeGraphs.filter((x) => !codeGraphs.includes(x))) {
       await knowledgeApi.code.unbind(id, agent.agent_id);
     }
-    // Chat Memory：全量覆盖（内部会过滤自身 memory、校验借入上限）
+    // Chat Memory: full overwrite (internally filters out its own memory and checks the borrow limit)
     if (!sameSet(chatMemories, initialChatMemories)) {
       await syncChatMemoryBindings(agent.team_id, agent.agent_id, chatMemories);
     }
@@ -181,7 +181,7 @@ export default function AgentEditDialog({
     setSavingPrompt(true);
     setSavingAssets(true);
     try {
-      // 运行时使用 prompt 完整文本；metadata_json 保留两个字段的拆分，供前端再次编辑时恢复。
+      // Runtime uses the full prompt text; metadata_json keeps the two fields split so the frontend can restore them when editing again.
       if (promptChanged) {
         await agentsApi.update(agent.agent_id, {
           name: nextName,
@@ -218,7 +218,7 @@ export default function AgentEditDialog({
         cancelled = true;
       };
 
-    // 读真实绑定源（权威、与运行时一致），仅用于只读展示。
+    // Read the real binding sources (authoritative, consistent with runtime), only for read-only display.
     Promise.allSettled([
       skillApi.listByAgent(agent.team_id, agent.agent_id),
       knowledgeApi.agentFixed(agent.agent_id),
@@ -271,7 +271,7 @@ export default function AgentEditDialog({
         if (cancelled) return;
         setRealBindingsLoaded(true);
         const msg = err instanceof Error ? err.message : String(err);
-        // 只读模式下后端可能拒绝访问非自己的 agent 资产（NOT_YOUR_AGENT），这是预期行为。
+        // In read-only mode the backend may refuse access to another user's agent assets (NOT_YOUR_AGENT); this is expected.
         if (!/NOT_YOUR_AGENT/.test(msg)) {
           tea.notify.error(t('agentEdit.notify.loadAssetsFailed', { msg }));
         }
@@ -326,7 +326,7 @@ export default function AgentEditDialog({
 
           <div className="_memory-asset-section">
             {bindingsLoading ? (
-              // 整个资产区域加载中：骨架占位 4 个折叠组的轮廓
+              // Whole asset area loading: skeleton outlines of the 4 collapsible groups
               <div className="_memory-asset-section-loading" aria-label="loading assets">
                 <div className="_memory-asset-loading">{t('agentEdit.assets.loading')}</div>
                 <div className="_memory-collapse-group-stack">
@@ -399,7 +399,7 @@ export default function AgentEditDialog({
                       disabledKeys={new Set([selfChatMemoryId])}
                     />
                   </CollapseGroup>
-                  {/* Skill 仍只读：其绑定是 fork 独立副本，编辑弹窗不做增删（见文件头说明） */}
+                  {/* Skill stays read-only: its binding is an independent fork replica, so the edit dialog doesn't add/remove (see the file header) */}
                   <CollapseGroup
                     icon={<ToolsIcon size={16} />}
                     title={t('settings.module.skill')}

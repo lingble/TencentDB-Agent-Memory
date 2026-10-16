@@ -1,5 +1,5 @@
 /**
- * source-fetcher barrel — 源码拉取接口层对外出口。
+ * source-fetcher barrel — public exports of the source fetching interface layer.
  */
 
 export type { ISourceFetcher, FetchResult, SourceType, GitFetchOptions } from "./types.js";

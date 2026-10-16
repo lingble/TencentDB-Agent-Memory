@@ -1,7 +1,7 @@
 # ============================================================
 # TDAI Gateway — Standalone 单机版配置
 # ============================================================
-# 适用场景: 本地开发 / Hermes sidecar / 单 Agent 单机部署
+# 适用场景: 本地开发 / 单 Agent 单机部署
 # 特点: 零外部依赖 (不需要 Redis/Shark), 进程内状态管理
 # ============================================================
 
@@ -53,11 +53,8 @@ upstream:
     - agent_source: pi
       protocol: openai-chat
       display_name: Pi
-    # ── header-only 客户端(hermes / openclaw):走 anthropic /v1/messages,
+    # ── header-only 客户端(openclaw):走 anthropic /v1/messages,
     #    通过 x-team-id / x-agent-id / x-task-id 请求头预选身份 ──
-    - agent_source: hermes
-      protocol: anthropic
-      display_name: Hermes
     - agent_source: openclaw
       protocol: anthropic
       display_name: OpenClaw

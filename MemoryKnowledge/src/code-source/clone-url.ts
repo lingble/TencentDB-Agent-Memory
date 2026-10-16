@@ -1,10 +1,10 @@
 /**
- * clone-url —— URL basic-auth 底层工具 + provider-aware 派发入口。
+ * clone-url — low-level URL basic-auth utility + provider-aware dispatch entry point.
  *
- * 分层：
- *   - `injectBasicAuth`：纯粹的 `https://<user>:<pass>@host/...` 编码，无业务
- *   - `buildCloneUrl`：入口。provider.applyToCloneUrl 覆盖 → 走 provider；
- *     否则委托给 provider.authMethod.buildCloneUrl（bearer/basic 分别处理）
+ * Layers:
+ *   - `injectBasicAuth`: pure `https://<user>:<pass>@host/...` encoding, no business logic
+ *   - `buildCloneUrl`: entry point. If provider.applyToCloneUrl overrides → use the provider;
+ *     otherwise delegate to provider.authMethod.buildCloneUrl (bearer/basic handled separately)
  */
 
 import type { CredentialPayload, ICodeSourceProvider } from "./types.js";
@@ -17,10 +17,10 @@ export class CloneUrlError extends Error {
 }
 
 /**
- * 底层 URL basic-auth 编码工具（无业务，不判 kind）。
+ * Low-level URL basic-auth encoding utility (no business logic, does not branch on kind).
  *
- * 输入 `{user, pass}` 与仓库 URL → 输出 `https://<user>:<pass>@host/...`。
- * user / pass 都做 URL 编码；只放行 https。
+ * Input `{user, pass}` and repo URL → output `https://<user>:<pass>@host/...`.
+ * Both user and pass are URL-encoded; only https is allowed.
  */
 export function injectBasicAuth(
   repoUrl: string,
@@ -40,16 +40,16 @@ export function injectBasicAuth(
 }
 
 /**
- * 把 URL 里的凭据剥掉（clone 完成后落回 .git/config 用的干净地址）。
- * 幂等：干净地址传进来原样返回。
+ * Strip credentials from a URL (the clean address written back to .git/config after clone).
+ * Idempotent: a clean address is returned unchanged.
  *
- * ⚠ **SSH 地址必须原样返回**：`git@` / `ssh://git@` 里的 `git` 是 SSH 登录用户，
- * 不是凭据。用 `new URL()` 清空 username 会把它一并删掉，变成
- * `ssh://host:2222/path.git` —— GitLab/GitHub 的 SSH 端点只接受 `git` 用户，
- * 于是 clone 必然认证失败（表现为"SSH 认证失败"但公钥其实没问题）。
+ * ⚠ **SSH addresses must be returned unchanged**: the `git` in `git@` / `ssh://git@` is the SSH login user,
+ * not a credential. Clearing username via `new URL()` would drop it too, producing
+ * `ssh://host:2222/path.git` — GitLab/GitHub SSH endpoints only accept the `git` user,
+ * so the clone would always fail auth (shows up as "SSH auth failed" even though the public key is fine).
  *
- * 不 import source-fetcher 的 isSshUrl 以避免循环依赖（source-fetcher ← code-source），
- * 这里用同规则的本地判定。
+ * We don't import source-fetcher's isSshUrl to avoid a circular dependency (source-fetcher ← code-source);
+ * a local check with the same rules is used here.
  */
 export function stripCredentials(repoUrl: string): string {
   const v = (repoUrl ?? "").trim();
@@ -72,11 +72,11 @@ function tryParse(s: string): URL | null {
 }
 
 /**
- * provider-aware 派发入口。
+ * Provider-aware dispatch entry point.
  *
- * 优先级：
- *   1. `provider.applyToCloneUrl`（provider 完全接管）
- *   2. `provider.authMethod.buildCloneUrl`（默认，按认证方式分派）
+ * Priority:
+ *   1. `provider.applyToCloneUrl` (provider takes over completely)
+ *   2. `provider.authMethod.buildCloneUrl` (default, dispatched by auth method)
  */
 export function buildCloneUrl(
   provider: ICodeSourceProvider,

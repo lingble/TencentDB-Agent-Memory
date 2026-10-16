@@ -1,17 +1,17 @@
 /**
- * asset-scope-store.ts — 资产「可配置范围」统一覆盖层（本地 localStorage）。
+ * asset-scope-store.ts - unified overlay for asset "configurable scope" (local localStorage).
  *
- * 从原 demoStore.ts 中抽出（独立职责：与 team/agent/task 本体的持久化方式
- * 无关，是叠加在 5 类资产之上的一层通用产品语义）。
+ * Extracted from the former demoStore.ts (separate responsibility: unrelated to how team/agent/task
+ * entities are persisted; it is a generic product-semantics layer on top of the 5 asset kinds).
  *
- * 需求：每个 owner 可以管理「自己的资产」，选择该资产是
- *   - team    团队内可配置：team 成员都能配置 / 编辑这条资产
- *   - private 仅自己私有：只有 owner（+ team admin / 全局 admin）能配置 / 编辑
+ * Requirement: each owner can manage "their own assets", choosing whether the asset is
+ *   - team    configurable within the team: team members can all configure / edit this asset
+ *   - private private to self: only the owner (+ team admin / global admin) can configure / edit
  *
- * 这一层覆盖全部 5 类资产（agent / skill / code / wiki / memory）。不同资产的
- * 底层数据来源不同（backendStore / mock / 后端 knowledgeApi），但「可配置范围」
- * 这件事是统一的产品语义，所以单独抽一个轻量覆盖层：按 `${kind}:${asset_id}`
- * 存一条记录，与资产本体解耦。后端上线后换成一张 asset_acl 表即可，UI 不用改。
+ * This layer covers all 5 asset kinds (agent / skill / code / wiki / memory). Different assets
+ * have different underlying data sources (backendStore / mock / backend knowledgeApi), but "configurable scope"
+ * is a unified product semantic, so it gets its own lightweight overlay: one record stored per `${kind}:${asset_id}`,
+ * decoupled from the asset entity. Once the backend ships, swap in an asset_acl table with no UI change.
  */
 
 import type { Team } from './backendStore';
@@ -25,7 +25,7 @@ export type AssetConfigScope = 'team' | 'private';
 
 export interface AssetScopeRecord {
   scope: AssetConfigScope;
-  /** 该资产的 owner —— 谁有权改它的可配置范围。无归属资产首次设置者成为 owner。 */
+  /** The asset's owner - who may change its configurable scope. For unowned assets the first setter becomes the owner. */
   owner_user_id: string;
   updated_at_ms: number;
 }
@@ -51,9 +51,9 @@ function writeAssetScopeMap(map: AssetScopeMap): void {
 }
 
 /**
- * 读取某条资产的可配置范围。
- * 未显式设置过的资产，默认 `team`（团队内可配置）—— 与现状（团队池共享）一致，
- * owner 回退到资产本体自带的 owner（fallbackOwner）。
+ * Read an asset's configurable scope.
+ * Assets never explicitly set default to `team` (configurable within the team) - consistent with current behavior (shared team pool);
+ * owner falls back to the asset entity's own owner (fallbackOwner).
  */
 export function getAssetConfigScope(
   kind: AssetKind,
@@ -66,9 +66,9 @@ export function getAssetConfigScope(
 }
 
 /**
- * 设置某条资产的可配置范围。
- * owner 一旦确定就固定（取已有记录 → 资产自带 owner → 当前操作者）。
- * 调用方应先用 canManageAssetScope 做 UI 拦截；这里不重复鉴权（演示阶段）。
+ * Set an asset's configurable scope.
+ * Once determined, the owner is fixed (existing record → the asset's own owner → the current operator).
+ * Callers should gate the UI with canManageAssetScope first; no duplicate auth check here (demo phase).
  */
 export function setAssetConfigScope(
   kind: AssetKind,
@@ -85,11 +85,11 @@ export function setAssetConfigScope(
 }
 
 /**
- * 谁能改一条资产的可配置范围：
- *   - 全局 admin / team admin → 可改（治理需要）
- *   - owner 本人 → 可改（"管理自己的资产"）
- *   - 无归属资产（ownerUserId 为空，如后端 Code/Wiki 没有 owner 概念）
- *     → 任意 team 成员可设置，首次设置者成为 owner
+ * Who can change an asset's configurable scope:
+ *   - global admin / team admin → can change (needed for governance)
+ *   - the owner → can change ("manage your own assets")
+ *   - unowned assets (empty ownerUserId, e.g. backend Code/Wiki have no owner concept)
+ *     → any team member can set it, and the first setter becomes the owner
  */
 export function canManageAssetScope(
   ownerUserId: string,
@@ -98,9 +98,9 @@ export function canManageAssetScope(
   isAdmin?: boolean
 ): boolean {
   if (!user_id) return false;
-  // 全局 admin 不再自动获得资产管理特权，与普通 member 一致：
-  // 只有 owner 本人或 team admin 能改资产的可配置范围。
-  // 保留 isAdmin 参数仅为兼容已有调用方签名（未来清理时可去掉）。
+  // Global admins no longer automatically get asset management privileges, same as regular members:
+  // only the owner or a team admin can change an asset's configurable scope.
+  // The isAdmin param is kept only for compatibility with existing call signatures (can be removed in a future cleanup).
   void isAdmin;
   if (team && isTeamAdmin(team, user_id)) return true;
   if (!ownerUserId) return isTeamMember(team, user_id);
@@ -108,8 +108,8 @@ export function canManageAssetScope(
 }
 
 /**
- * 订阅资产可配置范围覆盖层的变化。
- * 组件用它在 setAssetConfigScope 后自动重渲染（返回值是递增 tick，仅用于触发刷新）。
+ * Subscribe to changes in the asset configurable-scope overlay.
+ * Components use it to re-render automatically after setAssetConfigScope (the return value is an incrementing tick, only for triggering refreshes).
  */
 export function useAssetConfigScopes(): number {
   return useChangeNotifier();

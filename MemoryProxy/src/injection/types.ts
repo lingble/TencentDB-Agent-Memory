@@ -63,6 +63,12 @@ export interface AgentTool {
    * Sits at the same level as `input_schema` in the wire format.
    */
   cacheControl?: unknown;
+  /**
+   * Original wire-format tool object as received from the client. Lets the
+   * adapter re-emit fields it does not model (server-tool `type`, `max_uses`,
+   * `defer_loading`, …) instead of silently downgrading them to custom tools.
+   */
+  raw?: Record<string, unknown>;
 }
 
 // ── Context Metadata ──────────────────────────────────────────────────────────

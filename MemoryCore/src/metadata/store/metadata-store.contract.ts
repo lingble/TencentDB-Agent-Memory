@@ -1610,19 +1610,19 @@ export function runMetadataStoreContract(
             group_type: "custom", name: "T", agents: ["codebuddy"],
             mode: "custom_unified", base_url: "https://x.example.com", api_key: "sk-x",
           });
-          // Proxy 加了 cursor 和 hermes;codebuddy 仍在 supported 里但被 custom 占
+          // Proxy 加了 cursor 和 opencode;codebuddy 仍在 supported 里但被 custom 占
           const rows = await store.listInstanceUpstreamGroups(undefined, [
             { agent_source: "claude-code", protocol: "anthropic", display_name: "CC" },
             { agent_source: "codebuddy", protocol: "openai-chat", display_name: "CB" },
             { agent_source: "cursor", protocol: "anthropic", display_name: "Cursor" },
-            { agent_source: "hermes", protocol: "anthropic", display_name: "Hermes" },
+            { agent_source: "opencode", protocol: "openai-chat", display_name: "OpenCode" },
           ]);
           const d = rows.find((r) => r.group_type === "default")!;
-          // cursor/hermes append 到 default,codebuddy 被 custom 占不加(全域唯一)
-          expect(d.agents.sort()).toEqual(["claude-code", "cursor", "hermes"]);
+          // cursor/opencode append 到 default,codebuddy 被 custom 占不加(全域唯一)
+          expect(d.agents.sort()).toEqual(["claude-code", "cursor", "opencode"]);
           // snapshot 与 supported 对齐(包括 codebuddy)
           expect(d.supported_agents_snapshot.sort()).toEqual(
-            ["claude-code", "codebuddy", "cursor", "hermes"]);
+            ["claude-code", "codebuddy", "cursor", "opencode"]);
         });
 
         it("场景 B(存量迁移): 手动插一条 snapshot=空的 default → 首次 list 只补 snapshot,agents 不动",

@@ -2,15 +2,15 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './i18n';
-// 外部版 tea-component@2.8.0 没有 console-pack.css（那是内部版独有的 Tencent Cloud Console 主题包），
-// 使用 default-pack.css 替代（包含 Tea Design Token 体系 + 默认 light 主题变量定义）。
+// The external tea-component@2.8.0 has no console-pack.css (that is the internal-only Tencent Cloud Console theme pack),
+// so default-pack.css is used instead (includes the Tea Design Token system + default light theme variable definitions).
 import 'tea-component/dist/themes/default-pack.css';
 import 'tea-component/dist/tea-themeable.css';
 import './index.css';
 import './tea-override.css';
 
-// WOA SSO 认证后会把授权码挂在站点地址上（?code=...&state=...）跳回。
-// 会话已由后端 Cookie 建立，前端无需该参数，登录完成后清理地址栏，避免 code 残留/被复制分享。
+// After WOA SSO auth, the authorization code is attached to the site URL (?code=...&state=...) on redirect back.
+// The session is already established by a backend cookie and the frontend doesn't need it, so clean up the address bar after login to avoid code lingering / being copied and shared.
 (function stripWoaAuthParams() {
   try {
     const url = new URL(window.location.href);
@@ -25,7 +25,7 @@ import './tea-override.css';
       window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
     }
   } catch {
-    /* URL 解析失败时不影响应用启动 */
+    /* URL parse failure doesn't affect app startup */
   }
 })();
 

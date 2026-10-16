@@ -1,6 +1,6 @@
 /**
- * useChatMemory —— Chat Memory 页的全部状态与数据逻辑。
- * 组件层只保留 JSX 渲染，状态 / 数据逻辑集中在此。
+ * useChatMemory - all state and data logic for the Chat Memory page.
+ * The component layer keeps only JSX rendering; state / data logic is centralized here.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -40,23 +40,23 @@ export function useChatMemory(props: { activeTeamId?: string | null } = {}) {
   const [layerPages, setLayerPages] = useState<
     Record<string, Partial<Record<MemoryLayer, number>>>
   >({});
-  // 各层「当前时间窗口内」的总条数（key: `${blockId}|${layer}`）。
-  // layerCounts 存的是全量总数（选中块时 limit=1 拿到的）；带时间筛选（L0/L1）
-  // 时 BFF 返回的 res.total 才是窗口内数量，分页必须用它，否则页数虚高。
+  // Total count per layer "within the current time window" (key: `${blockId}|${layer}`).
+  // layerCounts holds the overall totals (fetched with limit=1 when a block is selected); with a time filter (L0/L1)
+  // the BFF's res.total is the in-window count. Pagination must use it, otherwise the page count is inflated.
   const [windowTotals, setWindowTotals] = useState<
     Record<string, Partial<Record<MemoryLayer, number>>>
   >({});
   const [layerLoading, setLayerLoading] = useState(false);
   const [layerItemLoadingId, setLayerItemLoadingId] = useState<string | null>(null);
-  // 手动刷新计数：自增即重新触发当前层数据加载与四层计数拉取（effect 依赖驱动）。
+  // Manual refresh counter: incrementing it re-triggers loading of the current layer and the four-layer count fetch (effect-dependency driven).
   const [refreshNonce, setRefreshNonce] = useState(0);
-  // 详情页时间筛选器（仅 L0 / L1 生效），默认「前一天 ~ 当前」
+  // Detail-view time filter (applies to L0 / L1 only), defaults to "previous day ~ now"
   const [timeRange, setTimeRange] = useState<TimeRange>(() => defaultTimeRange());
-  // 后端探测到筛选范围过大时为 true，BlockDetail 显示提示而非空态
+  // true when the backend detects the filter range is too large; BlockDetail shows a hint instead of the empty state
   const [rangeTooLarge, setRangeTooLarge] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showAllocate, setShowAllocate] = useState(false);
-  // 默认展示 Agent 资产（fixed），避免用户误以为自己的资产在「团队资产」里
+  // Show Agent assets (fixed) by default, so users don't think their own assets live under "Team assets"
   const [scopeTab, setScopeTab] = useState<ScopeTab>('fixed');
   const [agentFilter, setAgentFilter] = useState<string>('');
 
@@ -70,18 +70,18 @@ export function useChatMemory(props: { activeTeamId?: string | null } = {}) {
     }
   }, [ownedTeamAgents, agentFilter]);
 
-  // ── 数据加载 ──
-  // 请求序号防竞态：快速切换 tab 时，先发的请求可能后返回，
-  // 旧 tab 的数据会覆盖新 tab 的数据。每次 fetch 递增序号，
-  // 响应回来时校验序号是否仍是最新，不是就丢弃。
+  // ── Data loading ──
+  // Request sequence number against races: when switching tabs quickly, an earlier request may return later,
+  // and old-tab data would overwrite new-tab data. Each fetch increments the sequence number;
+  // when the response arrives, check whether it is still the latest, and discard it if not.
   const fetchSeqRef = useRef(0);
-  // 上一次 fetch 的 team，用于区分「切 team」与「切 tab / 切 agent」。
-  // 切 team 时静默刷新（保留旧列表直到新数据到达），不闪空不骨架屏；
-  // 切 tab / agent 仍按原逻辑清空 + loading。
+  // The team of the previous fetch, used to distinguish "switch team" from "switch tab / switch agent".
+  // Switching team refreshes silently (keep the old list until new data arrives), no blanking or skeleton;
+  // switching tab / agent still clears + shows loading as before.
   const prevTeamIdRef = useRef(activeTeamId);
-  // L0「自动扩展时间范围」的连续次数上限：窗口内到最早时自动往前扩展 24h，
-  // 直到后端确认该记忆块在更早时间也没有记录（重新加载返回空 → l0Ended 置位）为止。
-  // 该计数作为极端兜底（防止异常情况下无限循环），用户手动调整筛选会随组件重挂载而复位。
+  // Cap on consecutive L0 "auto-expand time range" steps: when the window reaches its earliest record, expand back 24h automatically,
+  // until the backend confirms the block has no earlier records either (reload returns empty -> l0Ended is set).
+  // This counter is an extreme fallback (prevents infinite loops in abnormal cases); it resets when the user adjusts the filter, since the component remounts.
   const l0AutoExpandCountRef = useRef(0);
 
   const fetchBlocks = useCallback(async () => {
@@ -90,21 +90,21 @@ export function useChatMemory(props: { activeTeamId?: string | null } = {}) {
       setBlocksLoading(false);
       return;
     }
-    // fixed tab 没选 agent 时不发请求，但要确保 loading 关闭
+    // When the fixed tab has no agent selected, don't send a request, but make sure loading is turned off
     if (scopeTab === 'fixed' && !agentFilter) {
       setBlocks([]);
       setBlocksLoading(false);
       return;
     }
     const seq = ++fetchSeqRef.current;
-    // 切 team 时静默刷新（保留旧列表直到新数据到达），不闪空不骨架屏；
-    // 切 tab / agent 仍清空 + loading。
+    // Switching team refreshes silently (keep the old list until new data arrives), no blanking or skeleton;
+    // switching tab / agent still clears + shows loading.
     const teamChanged = prevTeamIdRef.current !== activeTeamId;
     prevTeamIdRef.current = activeTeamId;
     if (!teamChanged) {
       setBlocksLoading(true);
-      // 立即清空旧数据 —— 否则切 tab 时会先看到上一个 tab 的列表，
-      // 新数据到了才突然替换，视觉上就是"闪一下"。
+      // Clear old data immediately - otherwise when switching tabs you first see the previous tab's list,
+      // which is suddenly replaced once new data arrives, visually a "flash".
       setBlocks([]);
     }
     try {
@@ -114,7 +114,7 @@ export function useChatMemory(props: { activeTeamId?: string | null } = {}) {
       } else {
         res = await chatMemoryApi.teamAssets(activeTeamId);
       }
-      if (seq !== fetchSeqRef.current) return; // 已被后续请求取代
+      if (seq !== fetchSeqRef.current) return; // superseded by a later request
       const mapped: MemoryBlock[] = res.items.map((b) => ({
         id: b.id,
         title: b.title,
@@ -127,9 +127,9 @@ export function useChatMemory(props: { activeTeamId?: string | null } = {}) {
         layer_counts: b.layer_counts,
         bound_agent_count: b.bound_agent_count,
         layers: { L0: [], L1: [], L2: [], L3: [] },
-        // 初始只填后端返回的**真实**计数（>0）；为 0 / 未落地的层留 undefined＝「未知」。
-        // 未知层的徽章显示占位，用户切到该 layer tab 时才按需请求真实计数，
-        // 避免选中一个块就顺带把其余 3 层各 ping 一次（纯预请求用户还没看的东西）。
+        // Initially fill only the **real** counts (>0) returned by the backend; layers that are 0 / not yet persisted stay undefined = "unknown".
+        // Badges for unknown layers show a placeholder; the real count is requested on demand when the user switches to that layer tab,
+        // avoiding pinging the other 3 layers just by selecting a block (pure prefetching of things the user hasn't looked at).
         layerCounts: buildInitialLayerCounts(b.layer_counts),
       }));
       setBlocks(mapped);
@@ -140,20 +140,20 @@ export function useChatMemory(props: { activeTeamId?: string | null } = {}) {
     } finally {
       if (seq === fetchSeqRef.current) setBlocksLoading(false);
     }
-    // 注：不再在这里 setSelectedId —— 之前 fetchBlocks 的 useCallback 依赖
-    // 了 selectedId，导致每次选中一个 block 都重新 fetch 整个列表（卡顿主因）。
-    // 默认选中的逻辑改由下方独立 effect 处理。
+    // Note: setSelectedId is no longer called here - previously fetchBlocks' useCallback depended
+    // on selectedId, causing the whole list to be re-fetched every time a block was selected (the main cause of lag).
+    // Default selection is now handled by the separate effect below.
   }, [activeTeamId, scopeTab, agentFilter, t]);
 
-  // 触发 fetchBlocks：依赖原始参数 + fetchBlocks，并用 key 去重防止短时间内重复触发。
-  // 之前直接 `useEffect(() => fetchBlocks(), [fetchBlocks])` 会因 fetchBlocks 引用变化
-  // （agentFilter 等依赖异步同步）触发多次，导致同一个接口被反复请求。
+  // Trigger fetchBlocks: depends on the raw params + fetchBlocks, deduplicated by key to avoid repeated triggers in a short time.
+  // Previously, a plain `useEffect(() => fetchBlocks(), [fetchBlocks])` fired multiple times as the fetchBlocks reference changed
+  // (agentFilter and other deps sync asynchronously), causing the same endpoint to be requested repeatedly.
   const fetchKeyRef = useRef<string>('');
   useEffect(() => {
-    // 只有 fixed tab 才按 agentFilter 拉取；team tab 的数据源（teamAssets）与选中
-    // agent 无关。若把 agentFilter 纳入 team 的 key，ownedTeamAgents 异步加载完后
-    // agentFilter 会从 '' 变成首个 agent，导致 key 变化、再触发一次**完全重复**的
-    // teamAssets 请求（进页面即多打一次接口）。
+    // Only the fixed tab fetches by agentFilter; the team tab's data source (teamAssets) is independent of the selected
+    // agent. If agentFilter were part of the team key, after ownedTeamAgents loads asynchronously
+    // agentFilter changes from '' to the first agent, changing the key and triggering a **fully duplicate**
+    // teamAssets request (one extra call on entering the page).
     const key =
       scopeTab === 'fixed'
         ? `${activeTeamId}|${scopeTab}|${agentFilter}`
@@ -163,33 +163,33 @@ export function useChatMemory(props: { activeTeamId?: string | null } = {}) {
     void fetchBlocks();
   }, [activeTeamId, scopeTab, agentFilter, fetchBlocks]);
 
-  // 列表变化后，仅当当前选中的记忆块已不在列表中时清空选中。
-  // 进入页面不自动选中第一个（与 skill 行为保持一致），由用户点击后再加载详情。
+  // After the list changes, clear the selection only if the selected block is no longer in the list.
+  // Don't auto-select the first item on page entry (consistent with skill behavior); details load after the user clicks.
   useEffect(() => {
     if (selectedId && !blocks.some((b) => b.id === selectedId)) {
       setSelectedId(null);
     }
   }, [blocks, selectedId]);
 
-  // ── 层分页加载 ──
+  // ── Layer pagination ──
   const selected = useMemo(
     () => (selectedId ? (blocks.find((b) => b.id === selectedId) ?? null) : null),
     [selectedId, blocks],
   );
   const layerPage = selected?.id ? (layerPages[selected.id]?.[layer] ?? 0) : 0;
   const pageSize = layerPageSize(layer);
-  /** 当前层「当前时间窗口内」的总条数；无窗口缓存时回退全量总数（L2/L3 恒等于全量） */
+  /** Total count of the current layer "within the current time window"; falls back to the overall total when no window cache exists (L2/L3 always equal the overall total) */
   const windowTotal = selected?.id
     ? (windowTotals[selected.id]?.[layer] ?? getLayerCount(selected, layer))
     : 0;
 
-  // ── 层计数：选中块即并行拉取四层计数 ──
-  // 业务确认：teamAssets / agentFixed / myAgents 返回的 layer_counts 不可靠，
-  // 必须对选中的 block 调用 L0/L1/L2/L3 四个 layer 接口才能拿到准确计数。
-  // 之前做接口优化时把这里去掉了，导致徽章数量不正确。
+  // ── Layer counts: fetch all four layer counts in parallel when a block is selected ──
+  // Confirmed by business: layer_counts returned by teamAssets / agentFixed / myAgents are unreliable,
+  // so the L0/L1/L2/L3 layer endpoints must be called for the selected block to get accurate counts.
+  // This was removed during an earlier API optimization, which made badge counts wrong.
   const layerCountSeqRef = useRef(0);
-  // 记录上一次已处理的 refreshNonce，用于区分「选中块变化」与「手动刷新」：
-  // 仅手动刷新（nonce 变化）时才忽略 layerCounts 缓存强制重拉四层计数。
+  // Track the last handled refreshNonce, to distinguish "selected block changed" from "manual refresh":
+  // only on manual refresh (nonce changed) is the layerCounts cache ignored and all four counts force-refetched.
   const layerCountNonceRef = useRef(refreshNonce);
   useEffect(() => {
     if (!selected?.id) return;
@@ -200,13 +200,13 @@ export function useChatMemory(props: { activeTeamId?: string | null } = {}) {
 
     const layers: MemoryLayer[] = ['L0', 'L1', 'L2', 'L3'];
     layers.forEach((l) => {
-      // 已经有真实计数的层不重复请求；手动刷新时强制重拉。
+      // Don't re-request layers that already have a real count; force refetch on manual refresh.
       if (!forceRefresh && selected.layerCounts[l] !== undefined) return;
 
       chatMemoryApi
         .layer(blockId, l, 1, 0)
         .then((res) => {
-          if (seq !== layerCountSeqRef.current) return; // 已被后续选中取代
+          if (seq !== layerCountSeqRef.current) return; // superseded by a later selection
           setBlocks((prev) =>
             prev.map((b) =>
               b.id === blockId ? { ...b, layerCounts: { ...b.layerCounts, [l]: res.total } } : b,
@@ -214,18 +214,18 @@ export function useChatMemory(props: { activeTeamId?: string | null } = {}) {
           );
         })
         .catch(() => {
-          // 单层计数失败不阻断其他层，静默忽略
+          // A single layer's count failure doesn't block other layers; ignore silently
         });
     });
   }, [selected?.id, refreshNonce]);
 
-  // 切换记忆块时，时间筛选器重置为默认「前一天 ~ 当前」（业务确认：每次打开都重置）
+  // When switching blocks, reset the time filter to the default "previous day ~ now" (confirmed by business: reset on every open)
   useEffect(() => {
     setTimeRange(defaultTimeRange());
     setRangeTooLarge(false);
   }, [selected?.id]);
 
-  // 切块 / 时间范围变化时，窗口内总数缓存作废（翻页与总数必须按新窗口重新计算）
+  // When the block / time range changes, the in-window total cache is invalidated (paging and totals must be recomputed for the new window)
   useEffect(() => {
     setWindowTotals({});
   }, [selected?.id, timeRange.start, timeRange.end]);
@@ -237,7 +237,7 @@ export function useChatMemory(props: { activeTeamId?: string | null } = {}) {
     }
     let cancelled = false;
     setLayerLoading(true);
-    // 时间筛选仅对 L0 / L1 生效；L2 / L3 是聚合产物，不传时间参数
+    // Time filter applies to L0 / L1 only; L2 / L3 are aggregated outputs, no time params passed
     const useTimeFilter = layer === 'L0' || layer === 'L1';
     const timeStart = useTimeFilter ? timeRange.start || undefined : undefined;
     const timeEnd = useTimeFilter ? timeRange.end || undefined : undefined;
@@ -255,8 +255,8 @@ export function useChatMemory(props: { activeTeamId?: string | null } = {}) {
       .then((res) => {
         if (cancelled) return;
         setRangeTooLarge(false);
-        // 带时间筛选时 res.total 是「当前时间窗口内」的数量，单独保存供分页用
-        // （layerCounts 仍是全量总数，不能动）。L2/L3 无时间维度，窗口总数 = 全量。
+        // With a time filter, res.total is the count "within the current time window"; store it separately for pagination
+        // (layerCounts is still the overall total and must not be touched). L2/L3 have no time dimension, window total = overall total.
         setWindowTotals((prev) => ({
           ...prev,
           [selected.id]: { ...(prev[selected.id] ?? {}), [layer]: res.total },
@@ -267,19 +267,19 @@ export function useChatMemory(props: { activeTeamId?: string | null } = {}) {
             const updated = {
               ...b,
               layers: { ...b.layers },
-              // 注意：带时间范围查询时 res.total 是「范围内」的数量，不是全量总数。
-              // 全量总数在选中块时已通过 limit=1 请求获取并存于 layerCounts，
-              // 这里不能覆盖，否则徽章计数 / L0 加载更多判断会错。
-              // 仅未带时间筛选（L2/L3，或清除时间范围后的 L0/L1）才同步全量 total。
+              // Note: with a time-range query, res.total is the count "within the range", not the overall total.
+              // The overall total was already fetched with a limit=1 request when the block was selected and stored in layerCounts;
+              // it must not be overwritten here, otherwise the badge count / L0 load-more check will be wrong.
+              // Only sync the overall total when there's no time filter (L2/L3, or L0/L1 after clearing the time range).
               ...(!useTimeFilter
                 ? { layerCounts: { ...b.layerCounts, [layer]: res.total } }
                 : {}),
             };
             if (res.layer === 'L0') {
               updated.layers.L0 = res.items;
-              // 首屏 / 时间筛选变化重新加载时：窗口内有记录 → 重置「已到最早」，
-              // 无记录 → 置位（说明该记忆块在更早时间也没有数据，自动扩展到此为止）。
-              // 这是自动扩展时间范围的收敛条件，避免无限往前扩展。
+              // On first-screen load / reload after a time-filter change: records in window -> reset "reached earliest",
+              // no records -> set it (the block has no data in earlier time either, so auto-expansion stops here).
+              // This is the convergence condition for auto-expanding the time range, avoiding infinite backward expansion.
               updated.l0Ended = res.items.length === 0;
             } else if (res.layer === 'L1') updated.layers.L1 = res.items.map(mapLayerItem);
             else if (res.layer === 'L2') updated.layers.L2 = res.items.map(mapLayerItem);
@@ -290,7 +290,7 @@ export function useChatMemory(props: { activeTeamId?: string | null } = {}) {
       })
       .catch((e: unknown) => {
         if (cancelled) return;
-        // 范围过大：不弹错误提示，交由 BlockDetail 渲染「记忆条数过多」引导
+        // Range too large: don't show an error toast; let BlockDetail render the "too many memories" guidance
         if (isRangeTooLargeError(e)) {
           setRangeTooLarge(true);
           return;
@@ -316,26 +316,26 @@ export function useChatMemory(props: { activeTeamId?: string | null } = {}) {
     [selected?.id, layer],
   );
 
-  // ── L0 加载更多（下拉/滚动到顶部触发） ──
-  // L0 固定消费第 0 页（最新一批），「加载更多」用最后一条消息的时间戳做游标
-  // （before_ts）请求更早的消息，而不是用数组长度做 offset。
-  // 原因：VDB 对大 offset 的 scan+skip 成本高，用时间戳过滤可将查询从 O(offset+limit)
-  // 降为 O(limit)。数组保持后端的新→旧顺序，渲染层再反转为旧→新，追加项出现在顶部。
+  // ── L0 load more (triggered by pull / scroll to top) ──
+  // L0 always consumes page 0 (the newest batch); "load more" uses the last message's timestamp as a cursor
+  // (before_ts) to request older messages, instead of using the array length as offset.
+  // Reason: VDB's scan+skip on large offsets is expensive; filtering by timestamp reduces the query from O(offset+limit)
+  // to O(limit). The array keeps the backend's newest->oldest order; the render layer reverses it to oldest->newest, so appended items appear at the top.
   const [l0MoreLoading, setL0MoreLoading] = useState(false);
   const handleL0LoadMore = useCallback(async () => {
     if (!selected?.id || layer !== 'L0' || l0MoreLoading) return;
     const items = selected.layers.L0;
     const total = selected.layerCounts.L0 ?? items.length;
-    // 已确认在当前时间窗口内到最早：不再发请求（双保险，正常由 BlockDetail 隐藏入口）
+    // Already confirmed earliest within the current time window: send no more requests (belt and braces; normally BlockDetail hides the entry)
     if (selected.l0Ended) return;
     if (items.length >= total) return;
-    // 游标：数组按新→旧排列，最后一条是最旧的已加载消息
+    // Cursor: array is newest->oldest, the last item is the oldest loaded message
     const lastItem = items[items.length - 1];
     const beforeTs = lastItem?.created_at;
     setL0MoreLoading(true);
     try {
-      // beforeTs 有值时 offset 传 0（后端按 time_end 过滤）；首屏无 beforeTs 时走 offset=0。
-      // 透传 timeStart 时间下界：加载更早消息不能越出用户设定的筛选范围，与首屏保持一致。
+      // When beforeTs is set, offset is 0 (backend filters by time_end); first screen without beforeTs uses offset=0.
+      // Pass through the timeStart lower bound: loading older messages must not exceed the user's filter range, consistent with the first screen.
       const timeStart = timeRange.start || undefined;
       const res = await chatMemoryApi.layer(
         selected.id,
@@ -350,23 +350,23 @@ export function useChatMemory(props: { activeTeamId?: string | null } = {}) {
       setBlocks((prev) =>
         prev.map((b) => {
           if (b.id !== selected.id) return b;
-          // 防御性去重：并发/刷新导致页重叠时不重复渲染同一条消息
+          // Defensive dedup: don't render the same message twice when pages overlap due to concurrency/refresh
           const existing = new Set(b.layers.L0.map((m) => m.id));
           const more = res.items.filter((m) => !existing.has(m.id));
-          // 注意：游标分页下后端返回的 total 是过滤后的剩余条数（time_end < beforeTs），
-          // 不是全量总数。保留首屏拿到的全量 total，避免"加载更多后总数递减"的假象。
+          // Note: under cursor pagination the backend's total is the filtered remaining count (time_end < beforeTs),
+          // not the overall total. Keep the overall total from the first screen to avoid the illusion of "total shrinking after load more".
           return {
             ...b,
             layers: { ...b.layers, L0: [...b.layers.L0, ...more] },
-            // 本次无新增（去重后为空）= 当前时间窗口内已到最早，置位隐藏「加载更早」入口
+            // Nothing new this time (empty after dedup) = reached earliest within the current window; set flag to hide the "load earlier" entry
             l0Ended: b.l0Ended || more.length === 0,
           };
         }),
       );
-      // 窗口内已到最早 → 自动往前扩展时间范围（提前 24h），触发 L0 重新加载，
-      // 让用户无需手改筛选器即可继续看到更早的记忆（设计意图：时间筛选不该成为
-      // 回溯历史的阻碍）。重新加载后若仍无数据，effect 会把 l0Ended 置位终止扩展。
-      // count 仅作极端兜底防死循环；正常路径靠「扩展后加载为空 → l0Ended」自然收敛。
+      // Reached earliest in window -> auto-expand the time range backward (24h earlier), triggering an L0 reload,
+      // so users can keep seeing older memories without manually changing the filter (design intent: the time filter should not
+      // hinder browsing history). If still no data after reload, the effect sets l0Ended to stop expanding.
+      // count is only an extreme fallback against infinite loops; the normal path converges via "empty after expansion -> l0Ended".
       if (noMore && timeRange.start && l0AutoExpandCountRef.current < 30) {
         l0AutoExpandCountRef.current += 1;
         const newStart = new Date(new Date(timeRange.start).getTime() - 24 * 60 * 60 * 1000);
@@ -429,9 +429,9 @@ export function useChatMemory(props: { activeTeamId?: string | null } = {}) {
     [selected?.id, selected?.layers.L2, layer, t],
   );
 
-  // ── 编辑：保存单层内容（Owner-only；成功后乐观更新对应条目 body） ──
-  // L1 = content 覆盖；L2 = 整份 scenario 正文覆盖（BFF 会剥 META 后写、内核重建 META）；
-  // L3 = 整份 core persona 覆盖。失败时抛出，交由调用方（编辑弹窗）保留输入并提示。
+  // ── Edit: save a single layer's content (Owner-only; on success, optimistically update the entry body) ──
+  // L1 = overwrite content; L2 = overwrite the whole scenario body (BFF strips META before writing, kernel rebuilds META);
+  // L3 = overwrite the whole core persona. Throws on failure, letting the caller (edit dialog) keep the input and show a hint.
   const handleSaveLayerItem = useCallback(
     async (targetLayer: 'L1' | 'L2' | 'L3', itemId: string, content: string) => {
       if (!selected?.id) return;
@@ -458,9 +458,9 @@ export function useChatMemory(props: { activeTeamId?: string | null } = {}) {
     [selected?.id, t],
   );
 
-  // ── 搜索：L0（对话）/ L1（原子记忆）语义 / 关键字检索 ──
-  // 跨 session 召回，返回带 score 的命中项；结果 state 交由 BlockDetail 管理，
-  // 这里只提供请求函数（依赖当前选中块）。
+  // ── Search: L0 (conversation) / L1 (atomic memory) semantic / keyword retrieval ──
+  // Cross-session recall, returning scored hits; result state is managed by BlockDetail,
+  // this only provides the request function (depends on the currently selected block).
   const searchLayer = useCallback(
     async (targetLayer: 'L0' | 'L1', query: string): Promise<ChatMemorySearchHit[]> => {
       if (!selected?.id) return [];
@@ -470,7 +470,7 @@ export function useChatMemory(props: { activeTeamId?: string | null } = {}) {
     [selected?.id],
   );
 
-  // ── 过滤与辅助 ──
+  // ── Filtering and helpers ──
   const filtered = useMemo(() => {
     if (scopeTab === 'fixed')
       return agentFilter ? blocks.filter((b) => b.agent_id === agentFilter) : [];
@@ -491,12 +491,12 @@ export function useChatMemory(props: { activeTeamId?: string | null } = {}) {
   }
 
   function isSelfChatMemory(b: MemoryBlock): boolean {
-    // 只有当"这条 chat_memory 是**当前正在查看的 agent** 的自身记忆"时才算 self —— 不允许解绑。
-    // 之前 bug：任何 `chat_memory-{team}-{agentX}` 命名的 asset 都被判成 self，
-    // 导致别人 agent 的记忆借入到当前 agent 后（e.g. test3 借了 test-bugfix 的），
-    // 也被误判为 self，"解绑"按钮永远不显示。
-    // fixed tab 下 agentFilter 就是当前 agent；team/personal tab 不涉及"解绑"语义，
-    // 保留原前缀判定作为兜底。
+    // It counts as self only when "this chat_memory is the own memory of the **agent currently being viewed**" - unbinding not allowed.
+    // Previous bug: any asset named `chat_memory-{team}-{agentX}` was judged as self,
+    // so after another agent's memory was borrowed into the current agent (e.g. test3 borrowed test-bugfix's),
+    // it was also misjudged as self, and the "unbind" button never showed.
+    // Under the fixed tab, agentFilter is the current agent; team/personal tabs don't involve "unbind" semantics,
+    // so keep the original prefix check as a fallback.
     if (!activeTeamId) return false;
     if (scopeTab === 'fixed' && agentFilter) {
       return b.id === `chat_memory-${activeTeamId}-${agentFilter}`;
@@ -506,17 +506,17 @@ export function useChatMemory(props: { activeTeamId?: string | null } = {}) {
   }
 
   function allocatableAgents(b: MemoryBlock) {
-    // 文档 §4.5 allocate 权限规则：
-    //   1. agent.owner = me（只能分配到自己 owner 的 agent，否则 403 NOT_YOUR_AGENT）
-    //   3. 不能把 agent 自己的 chat_memory 分配给自己
-    // 所以数据源用 ownedTeamAgents，排除该记忆块自身的 agent。
+    // Doc §4.5 allocate permission rules:
+    //   1. agent.owner = me (can only allocate to agents you own, otherwise 403 NOT_YOUR_AGENT)
+    //   3. an agent's own chat_memory can't be allocated to itself
+    // So the data source is ownedTeamAgents, excluding the block's own agent.
     const ownerAgentId = selfChatMemoryAgentId(b);
     return ownedTeamAgents
       .filter((a) => a.agent_id !== ownerAgentId)
       .map((a) => ({ agent_id: a.agent_id, name: a.name }));
   }
 
-  // ── 操作 ──
+  // ── Actions ──
   async function handleDeleteBlock(id: string) {
     const block = blocks.find((b) => b.id === id);
     const teamId = activeTeamId;
@@ -559,12 +559,12 @@ export function useChatMemory(props: { activeTeamId?: string | null } = {}) {
     }
   }
 
-  // 共享/私密切换：原 personal tab 的独有能力，取消 personal tab 后迁移到
-  // 「Agent 资产(fixed)」tab 的资产项上（仅 owner 可切，见 ChatMemoryPanel 渲染处）。
+  // Shared/private toggle: originally unique to the personal tab; after removing the personal tab it moved to
+  // asset items in the "Agent assets (fixed)" tab (only the owner can toggle, see ChatMemoryPanel rendering).
   async function handleToggleScope(block: MemoryBlock, newScope: 'team' | 'private') {
     if (block.scope === newScope) return;
-    // 切私密时先 confirm：其他 agent 若已借入该记忆将不可再使用。
-    // 说明只给感知，不列出被影响的 agent 列表（内核不主动 prune，故也无需精确数字）。
+    // Confirm before switching to private: other agents that have borrowed this memory will no longer be able to use it.
+    // The message is just for awareness and doesn't list affected agents (the kernel doesn't prune proactively, so no exact count is needed).
     if (newScope === 'private') {
       const ok = await tea.confirm({
         message: t('memory.confirm.private'),
@@ -584,22 +584,22 @@ export function useChatMemory(props: { activeTeamId?: string | null } = {}) {
     }
   }
 
-  // 手动刷新当前选中块的当前层：作废窗口总数缓存并自增 nonce，
-  // 触发主加载 effect 重新拉取当前层数据、四层计数 effect 强制重拉计数。
+  // Manual refresh of the current layer of the selected block: invalidate the window-total cache and increment the nonce,
+  // triggering the main load effect to refetch the current layer and the four-layer count effect to force-refetch counts.
   const refreshLayer = useCallback(() => {
     if (!selected?.id) return;
-    // 作废当前块的窗口总数缓存（让 windowTotal 回退到全量，等主加载 effect 重新填）
+    // Invalidate the current block's window-total cache (windowTotal falls back to the overall total until the main load effect refills it)
     setWindowTotals((prev) => {
       if (!(selected.id in prev)) return prev;
       const next = { ...prev };
       delete next[selected.id];
       return next;
     });
-    // 刷新时重置时间筛选到「当前时刻 ~ 前一天」：否则 L0/L1 新写入的记忆会因
-    // timeRange.end 停留在页面加载时刻而被过滤掉，表现为「点刷新看不到新数据」。
+    // On refresh, reset the time filter to "now ~ previous day": otherwise newly written L0/L1 memories would
+    // be filtered out because timeRange.end stays at page-load time, showing up as "refresh doesn't show new data".
     setTimeRange(defaultTimeRange());
     setRangeTooLarge(false);
-    // 自增 nonce：触发主加载 effect（重新拉当前层数据）与四层计数 effect（强制重拉计数）
+    // Increment nonce: triggers the main load effect (refetch current layer data) and the four-layer count effect (force-refetch counts)
     setRefreshNonce((n) => n + 1);
   }, [selected?.id]);
 

@@ -7,7 +7,7 @@
  * Directory structure:
  *   adapters/
  *   ├── openclaw/      — OpenClaw plugin host (in-process, runEmbeddedPiAgent)
- *   └── standalone/    — Gateway / Hermes sidecar (HTTP, OpenAI-compatible API)
+ *   └── standalone/    — Standalone Gateway (HTTP, OpenAI-compatible API)
  */
 
 // OpenClaw adapter

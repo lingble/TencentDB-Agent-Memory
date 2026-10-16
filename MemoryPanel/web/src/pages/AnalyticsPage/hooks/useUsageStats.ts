@@ -1,10 +1,10 @@
 /**
- * useUsageStats — 成本视角数据加载（usage/* 四项 + usage-raw 异常）。
+ * useUsageStats — cost-view data loading (the four usage/* items + usage-raw anomalies).
  *
- * 与指标面（useAnalyticsMetrics）分开加载：成本区块位于独立 Tab，只有用户切到
- * 该 Tab（enabled=true）才发请求，避免首屏一次性打出 10+ 个 CH 查询。
+ * Loaded separately from the metrics view (useAnalyticsMetrics): the cost section lives in its own Tab, and requests are sent only when the user switches to
+ * that Tab (enabled=true), avoiding firing 10+ CH queries at once on first paint.
  *
- * 口径：全部来自内核 SQL 聚合/分页，均为**全量准确值**，无面板侧抽样。
+ * Scope: everything comes from kernel SQL aggregation/pagination and is a **fully accurate value**, with no panel-side sampling.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -57,7 +57,7 @@ export function useUsageStats(params: {
   const rawSeqRef = useRef(0);
   const queryBody = useMemo(() => ({ days, space_id: spaceId }), [days, spaceId]);
 
-  // 过滤条件变化时回到第一页，避免停留在越界 offset
+  // Go back to the first page when filters change, to avoid staying on an out-of-range offset
   useEffect(() => {
     setRawOffset(0);
   }, [days, spaceId, rawReason]);
@@ -67,9 +67,9 @@ export function useUsageStats(params: {
     setLoading(true);
     setError('');
     try {
-      // reason 分级计数：内核无 GROUP BY reason 的聚合接口，故对 5 个枚举各取
-      // 一次 total（limit=1，不拉明细）。这是必要的：non_tokenhub 是「非 TokenHub
-      // 通道正常留档」而非异常，与真异常混在一起会让总数严重误导。
+      // reason tier counts: the kernel has no GROUP BY reason aggregation endpoint, so fetch the total once for each of the 5 enum values
+      // (limit=1, no details). This is necessary: non_tokenhub is a "normal archive outside the TokenHub
+      // channel" rather than an anomaly, and mixing it with real anomalies would make the total badly misleading.
       const [sum, ts, mds, ...counts] = await Promise.all([
         analyticsApi.usageSummary(queryBody),
         analyticsApi.usageTimeseries(queryBody),
@@ -111,7 +111,7 @@ export function useUsageStats(params: {
       setRawTotal(res.total);
     } catch (err) {
       if (seq !== rawSeqRef.current) return;
-      // 异常上报表加载失败不应遮蔽主聚合数据，单独提示
+      // A failure to load the anomaly report table shouldn't hide the main aggregated data; report it separately
       setError(getErrorMessage(err));
       setRawRows([]);
     } finally {

@@ -1,23 +1,23 @@
 /**
- * Per-wiki `index.db` connection management (设计 006).
+ * Per-wiki `index.db` connection management (design 006).
  *
- * 每个 wiki 一个独立 SQLite 文件 `index.db`，放在该 wiki 的数据目录下（与正文 `.md`
- * 同目录同生命周期），承载本 wiki 的全部私有索引数据：
- *   - `wiki_fts`   FTS5 预分词倒排（BM25 全文检索）
- *   - `page_meta`  页元数据（title/type/rel_path/snippet；正文不入库，留磁盘）
- *   - `graph_edge` 知识图谱有向边（多跳 BFS 用）
- *   - `source`     源文件一等实体（增量判断 + 生命周期；DDL 本轮建好，读写方法见 003 阶段）
+ * Each wiki has its own SQLite file `index.db` in that wiki's data directory (same directory and
+ * lifecycle as the `.md` content), holding all of the wiki's private index data:
+ *   - `wiki_fts`   FTS5 pre-tokenized inverted index (BM25 full-text search)
+ *   - `page_meta`  page metadata (title/type/rel_path/snippet; body is not stored in the DB, it stays on disk)
+ *   - `graph_edge` knowledge graph directed edges (for multi-hop BFS)
+ *   - `source`     source files as first-class entities (incremental detection + lifecycle; DDL created this round, read/write methods in phase 003)
  *
- * 连接策略（设计 §4）：
- *   - 写（ingest/sync：重建 FTS5 + graph_edge + 更新 source）：**独立连接**，事务内完成
- *     → `wal_checkpoint(TRUNCATE)` → `close()`，不进池，避免被读池 LRU 驱逐的竞态。
- *   - 读（search/graph）：走 **LRU 连接池**，热 wiki 常驻、冷 wiki 驱逐。
+ * Connection strategy (design §4):
+ *   - Write (ingest/sync: rebuild FTS5 + graph_edge + update source): **dedicated connection**, done within a transaction
+ *     → `wal_checkpoint(TRUNCATE)` → `close()`; not pooled, avoiding races with LRU eviction from the read pool.
+ *   - Read (search/graph): uses the **LRU connection pool**; hot wikis stay resident, cold wikis are evicted.
  *
- * 内存上限 = POOL_MAX × cache_size（约 600MB），与 wiki 总数解耦；SQLite 打开连接
- * 亚毫秒、数据按 page 懒加载，不是"打开即全量入内存"，正是它根治 MiniSearch 20GB OOM 的原因。
+ * Memory cap = POOL_MAX × cache_size (~600MB), decoupled from the total number of wikis; opening a SQLite connection
+ * takes sub-milliseconds and data is lazily loaded per page, not "fully loaded into memory on open" — which is exactly why it fixes the MiniSearch 20GB OOM.
  *
- * fd 约束（设计 §4.3）：WAL 每连接占 3 fd（db+wal+shm），`POOL_MAX × 3 + 富余` 需 ≤ ulimit -n。
- * POOL_MAX 与部署 ulimit 联动，默认 300（约 900 fd，建议 ulimit -n ≥ 2048）。
+ * fd constraint (design §4.3): with WAL each connection uses 3 fds (db+wal+shm); `POOL_MAX × 3 + headroom` must be ≤ ulimit -n.
+ * POOL_MAX is tied to the deployment ulimit; default 300 (~900 fds, ulimit -n ≥ 2048 recommended).
  */
 
 import Database from "better-sqlite3";
@@ -27,8 +27,8 @@ import { join } from "node:path";
 import { existsSync } from "node:fs";
 
 /**
- * 读连接池上限。与部署 ulimit 联动（WAL 每连接 3 fd，需 ulimit -n ≥ POOL_MAX*3 + 富余）。
- * 可用环境变量覆盖（仅用于测试或特殊部署环境），默认 300。
+ * Read connection pool cap. Tied to the deployment ulimit (WAL uses 3 fds per connection; requires ulimit -n ≥ POOL_MAX*3 + headroom).
+ * Can be overridden via environment variable (only for tests or special deployments); default 300.
  */
 const POOL_MAX = (() => {
   const raw = process.env.KNOWLEDGE_WIKI_POOL_MAX;
@@ -36,10 +36,10 @@ const POOL_MAX = (() => {
   return Number.isInteger(n) && n > 0 ? n : 300;
 })();
 
-/** 每连接 page cache 上限（KB）；cache_size 用负数表示 KB。 */
+/** Per-connection page cache cap (KB); cache_size uses a negative number to mean KB. */
 const CACHE_KB = 2000;
 
-/** 驱逐/关闭一个读连接：先 checkpoint 合并 WAL，再关闭。失败静默（连接可能已损坏）。 */
+/** Evicts/closes a read connection: checkpoint to merge the WAL first, then close. Fails silently (the connection may be broken). */
 function disposeDb(db: Database.Database): void {
   try {
     if (db.open) {
@@ -47,31 +47,31 @@ function disposeDb(db: Database.Database): void {
       db.close();
     }
   } catch {
-    /* best-effort：连接可能已被关闭或文件已删 */
+    /* best-effort: the connection may already be closed or the file deleted */
   }
 }
 
 /**
- * 读连接 LRU 池（lru-cache，MIT）：热 wiki 连接常驻、冷 wiki 被驱逐。
- * 驱逐（超出 max）与显式 `delete`（wiki 删除）都会触发 `dispose` → checkpoint + close。
+ * Read connection LRU pool (lru-cache, MIT): hot wiki connections stay resident, cold wikis are evicted.
+ * Both eviction (exceeding max) and explicit `delete` (wiki deletion) trigger `dispose` → checkpoint + close.
  */
 const readPool = new LRUCache<string, Database.Database>({
   max: POOL_MAX,
   dispose: (db) => disposeDb(db),
 });
 
-/** 每个连接打开时统一设置的 pragma（设计 §4.2）。 */
+/** Pragmas applied uniformly whenever a connection is opened (design §4.2). */
 function applyPragmas(db: Database.Database): void {
-  db.pragma("journal_mode = WAL"); // 多读单写；search 期间 ingest 不阻塞读
-  db.pragma("synchronous = NORMAL"); // WAL 下安全且快
-  db.pragma(`cache_size = -${CACHE_KB}`); // 每连接 page cache 上限（负数=KB）
-  db.pragma("busy_timeout = 5000"); // 写锁最多等 5s，避免偶发 SQLITE_BUSY
+  db.pragma("journal_mode = WAL"); // multiple readers, single writer; ingest doesn't block reads during search
+  db.pragma("synchronous = NORMAL"); // safe and fast under WAL
+  db.pragma(`cache_size = -${CACHE_KB}`); // per-connection page cache cap (negative = KB)
+  db.pragma("busy_timeout = 5000"); // wait at most 5s for the write lock, avoiding sporadic SQLITE_BUSY
 }
 
-/** 建 4 张表（幂等）。仅在 initIndexDb（wiki 显式创建）时调用。 */
+/** Creates the 4 tables (idempotent). Only called from initIndexDb (explicit wiki creation). */
 function initSchema(db: Database.Database): void {
-  // ① BM25：FTS5 虚拟表。存预分词后的空格 token 串，中文 bigram 逻辑留在 JS tokenize()，
-  //    FTS5 用 unicode61 仅按空格/标点切（与 __tests__/bm25-comparison 验证过的配置一致）。
+  // ① BM25: FTS5 virtual table. Stores pre-tokenized space-separated token strings; Chinese bigram logic stays in JS tokenize(),
+  //    FTS5 uses unicode61 to split only on spaces/punctuation (matches the config validated in __tests__/bm25-comparison).
   db.exec(
     `CREATE VIRTUAL TABLE IF NOT EXISTS wiki_fts USING fts5(
        page_id UNINDEXED,
@@ -81,7 +81,7 @@ function initSchema(db: Database.Database): void {
      );`,
   );
 
-  // ② 页元数据（搜索结果返回用，不含正文；正文在磁盘 .md）。
+  // ② Page metadata (returned in search results; excludes the body, which lives in the on-disk .md).
   db.exec(
     `CREATE TABLE IF NOT EXISTS page_meta (
        page_id   TEXT PRIMARY KEY,
@@ -92,7 +92,7 @@ function initSchema(db: Database.Database): void {
      );`,
   );
 
-  // ③ 图谱有向边（多跳 BFS 用；查询时读进内存构建小图，图谱数据小）。
+  // ③ Graph directed edges (for multi-hop BFS; read into memory at query time to build a small graph — graph data is small).
   db.exec(
     `CREATE TABLE IF NOT EXISTS graph_edge (
        source_id TEXT NOT NULL,
@@ -101,8 +101,8 @@ function initSchema(db: Database.Database): void {
      );`,
   );
 
-  // ④ Source 管理表（003：源文件一等实体）。DDL 本轮建好保持 schema 稳定，
-  //    读写方法（readSources/writeSource/markIngested/deleteSource）在 003 阶段补齐。
+  // ④ Source management table (003: source files as first-class entities). DDL is created this round to keep the schema stable;
+  //    read/write methods (readSources/writeSource/markIngested/deleteSource) are completed in phase 003.
   db.exec(
     `CREATE TABLE IF NOT EXISTS source (
        filename          TEXT PRIMARY KEY,
@@ -123,8 +123,8 @@ function dbPath(wikiDir: string): string {
 }
 
 /**
- * ★ 显式建库：在 wiki 创建接口里调一次，建好 4 张表。幂等（IF NOT EXISTS）。
- * 此后 getReadDb / withWriteDb 只打开已存在的库、不建表。
+ * ★ Explicit DB creation: called once from the wiki creation API to create the 4 tables. Idempotent (IF NOT EXISTS).
+ * Afterwards getReadDb / withWriteDb only open the existing DB and never create tables.
  */
 export function initIndexDb(wikiDir: string): void {
   const db = new Database(dbPath(wikiDir));
@@ -138,8 +138,8 @@ export function initIndexDb(wikiDir: string): void {
 }
 
 /**
- * 读连接（search/graph）：走池、复用。库必须已由 initIndexDb 建好。
- * 库不存在 → 抛错（视为"wiki 未正确创建/数据损坏"，不静默 lazy 建）。
+ * Read connection (search/graph): pooled and reused. The DB must already have been created by initIndexDb.
+ * DB missing → throws (treated as "wiki not created properly / data corrupted"; no silent lazy creation).
  */
 export function getReadDb(wikiId: string, wikiDir: string): Database.Database {
   let db = readPool.get(wikiId);
@@ -156,8 +156,8 @@ export function getReadDb(wikiId: string, wikiDir: string): Database.Database {
 }
 
 /**
- * 写连接（ingest/sync/rawWrite）：独立创建，事务内完成后 checkpoint + close，不进池。
- * `fn` 内的重建（FTS5 + graph_edge + page_meta + source）在同一事务里原子完成。
+ * Write connection (ingest/sync/rawWrite): created separately; after the transaction completes, checkpoint + close; not pooled.
+ * The rebuild inside `fn` (FTS5 + graph_edge + page_meta + source) completes atomically in a single transaction.
  */
 export function withWriteDb<T>(wikiDir: string, fn: (db: Database.Database) => T): T {
   const path = dbPath(wikiDir);
@@ -175,24 +175,24 @@ export function withWriteDb<T>(wikiDir: string, fn: (db: Database.Database) => T
   }
 }
 
-/** wiki 删除：先关读连接（dispose 内部 checkpoint+close），调用方再 rmSync 目录。 */
+/** Wiki deletion: close the read connection first (dispose does checkpoint+close internally); the caller then rmSyncs the directory. */
 export function evictWikiDb(wikiId: string): void {
   readPool.delete(wikiId);
 }
 
-/** 当前读池中的连接数（测试/可观测用）。 */
+/** Number of connections currently in the read pool (for tests/observability). */
 export function readPoolSize(): number {
   return readPool.size;
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// source 表读写（设计 003：源文件一等实体 + 增量抽取）
+// source table read/write (design 003: source files as first-class entities + incremental extraction)
 // ═══════════════════════════════════════════════════════════════════
 
-/** 单个源文件的生命周期状态（文件粒度，与 wiki 粒度的 status 无关）。 */
+/** Lifecycle status of a single source file (file granularity; unrelated to the wiki-level status). */
 export type SourceStatus = "uploaded" | "ingested" | "failed";
 
-/** source 表一行（rawLs 返回、增量判断用）。 */
+/** A row of the source table (returned by rawLs, used for incremental detection). */
 export interface SourceRow {
   filename: string;
   sha256: string;
@@ -205,16 +205,16 @@ export interface SourceRow {
   ingest_error: string | null;
 }
 
-/** 计算内容 SHA-256（增量判断与 source 登记共用同一份 sha）。 */
+/** Computes the content SHA-256 (incremental detection and source registration share the same sha). */
 export function sha256(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");
 }
 
 /**
- * rawWrite 登记 source（设计 §3.4，先查再更新，非盲 UPSERT）。必须在 withWriteDb 事务内调用。
- * - 新文件 → INSERT，status=uploaded，last_modified_by=创建人；
- * - sha 变化 → UPDATE，**保留 created_at**，重置 uploaded、记最后变更人、清 ingest_error；
- * - sha 未变 → 幂等，什么都不动（相同内容重复上传，方案 a）。
+ * Registers a source on rawWrite (design §3.4: query then update, not a blind UPSERT). Must be called inside a withWriteDb transaction.
+ * - New file → INSERT, status=uploaded, last_modified_by=creator;
+ * - sha changed → UPDATE, **keep created_at**, reset to uploaded, record the last modifier, clear ingest_error;
+ * - sha unchanged → idempotent, nothing changes (re-upload of identical content, option a).
  */
 export function upsertSource(
   db: Database.Database,
@@ -241,7 +241,7 @@ export function upsertSource(
   return "unchanged";
 }
 
-/** 读全部 source 行（rawLs），按 filename 排序。 */
+/** Reads all source rows (rawLs), sorted by filename. */
 export function listSources(db: Database.Database): SourceRow[] {
   return db
     .prepare(
@@ -251,7 +251,7 @@ export function listSources(db: Database.Database): SourceRow[] {
     .all() as SourceRow[];
 }
 
-/** 读 filename → {sha256, status} 映射（增量判断用）。 */
+/** Reads the filename → {sha256, status} mapping (for incremental detection). */
 export function readSourceStates(
   db: Database.Database,
 ): Map<string, { sha256: string; status: SourceStatus }> {
@@ -265,7 +265,7 @@ export function readSourceStates(
   return m;
 }
 
-/** 删除 source 行（rawRm / ingest 时文件已消失）。在事务内调用。 */
+/** Deletes source rows (rawRm / file gone at ingest time). Call inside a transaction. */
 export function deleteSources(db: Database.Database, filenames: string[]): void {
   if (filenames.length === 0) return;
   const stmt = db.prepare("DELETE FROM source WHERE filename = ?");
@@ -273,11 +273,11 @@ export function deleteSources(db: Database.Database, filenames: string[]): void 
 }
 
 /**
- * ingest 后登记单个源的抽取结果（设计 §3.6 step 6，在索引重建同事务内调用）。
- * - 已有行：只更新 status/ingested_at/ingest_error，**不动** created_at/updated_at/sha256/size
- *   （sha 由 rawWrite 维护、内容未变；updated_at 表示"内容变更"，抽取不算内容变更）；
- * - 无行（源文件未经 rawWrite 直接落盘）：以磁盘现值 INSERT（created_at=updated_at=now）。
- * ok=true → ingested + ingested_at；ok=false → failed + ingest_error。
+ * Records a single source's extraction result after ingest (design §3.6 step 6, called within the same transaction as the index rebuild).
+ * - Existing row: only update status/ingested_at/ingest_error; **do not touch** created_at/updated_at/sha256/size
+ *   (sha is maintained by rawWrite and content is unchanged; updated_at means "content changed", and extraction isn't a content change);
+ * - No row (source file written to disk directly without rawWrite): INSERT with current on-disk values (created_at=updated_at=now).
+ * ok=true → ingested + ingested_at; ok=false → failed + ingest_error.
  */
 export function recordSourceIngestResult(
   db: Database.Database,
@@ -301,11 +301,11 @@ export function recordSourceIngestResult(
 }
 
 /**
- * 增量分类（设计 §3.6 step 3，纯函数，便于单测）：
- * 对比"磁盘源文件"与"source 表上次状态"，判定各文件的去向。
- * - toIngest：新增 || 未成功抽取（status≠ingested，含 uploaded/failed）|| sha 变化 → 需抽取；
- * - skipped ：status=ingested 且 sha 未变 → 跳过 LLM（省 token）；
- * - deleted ：表中有但磁盘已无 → 待级联删除 + 删 source 行。
+ * Incremental classification (design §3.6 step 3; pure function, easy to unit test):
+ * compares "on-disk source files" with "last state in the source table" to decide what happens to each file.
+ * - toIngest: new || not successfully extracted (status≠ingested, incl. uploaded/failed) || sha changed → needs extraction;
+ * - skipped : status=ingested and sha unchanged → skip the LLM (saves tokens);
+ * - deleted : in the table but gone from disk → pending cascade deletion + delete the source row.
  */
 export function classifySources(
   disk: Array<{ filename: string; sha256: string }>,

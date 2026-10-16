@@ -1,18 +1,18 @@
 /**
- * chunker.ts — 超长源的分块。
+ * chunker.ts — chunking for oversized sources.
  *
- * 当源字符数超过模型上下文预算时，把文本切成若干块逐块处理，
- * 块间留少量重叠以保留上下文连续性（INTERFACE §6）。
+ * When a source's character count exceeds the model's context budget, the text is split into chunks
+ * processed one by one, with a small overlap between chunks to preserve context continuity (INTERFACE §6).
  *
- * 切分单位（OQ-5 优化）：优先按 markdown 标题（`#`~`######`）边界切，
- * 让每个语义小节尽量完整地落在同一块里；超长小节再回退到按空行段落切，
- * 仍超长的段落最后硬切。避免在句子/小节中间生硬截断。
+ * Split units (OQ-5 optimization): prefer splitting on markdown heading (`#`~`######`) boundaries
+ * so each semantic section lands in a single chunk as much as possible; oversized sections fall back to
+ * splitting on blank-line paragraphs, and paragraphs that are still too long are hard-cut. Avoids abrupt cuts mid-sentence/section.
  */
 
 export interface ChunkOptions {
-  /** 单块目标字符数上限（默认 12000）。 */
+  /** Target max characters per chunk (default 12000). */
   targetChars?: number;
-  /** 块间重叠字符数（默认 400）。 */
+  /** Overlap characters between chunks (default 400). */
   overlapChars?: number;
 }
 
@@ -20,13 +20,13 @@ const DEFAULT_TARGET = 12_000;
 const DEFAULT_OVERLAP = 400;
 
 /**
- * 把文本切成「切分单位」数组：每个单位尽量是一个完整的 markdown 小节
- * （从一个标题行到下一个标题行之前）。无标题的开头部分作为独立单位。
- * 超过 target 的单位再按空行段落细分，仍超长的段落硬切。
+ * Splits text into an array of "split units": each unit is ideally one complete markdown section
+ * (from one heading line up to the next heading line). A leading part without a heading is its own unit.
+ * Units exceeding target are further split on blank-line paragraphs; paragraphs still too long are hard-cut.
  */
 function splitIntoUnits(text: string, target: number): string[] {
   const lines = text.split("\n");
-  // 先按标题行切成小节。
+  // First split into sections by heading lines.
   const sections: string[] = [];
   let cur: string[] = [];
   const isHeading = (line: string) => /^#{1,6}\s+\S/.test(line);
@@ -40,7 +40,7 @@ function splitIntoUnits(text: string, target: number): string[] {
   }
   if (cur.length > 0) sections.push(cur.join("\n"));
 
-  // 超长小节回退细分：先按空行段落，再硬切。
+  // Fallback split for oversized sections: first by blank-line paragraphs, then hard cut.
   const units: string[] = [];
   for (const sec of sections) {
     const s = sec.trim();
@@ -63,9 +63,9 @@ function splitIntoUnits(text: string, target: number): string[] {
 }
 
 /**
- * 把文本聚合成若干块。每块尽量不超过 targetChars，按 markdown 小节边界聚合。
+ * Aggregates text into chunks. Each chunk stays within targetChars where possible, grouped on markdown section boundaries.
  *
- * @returns 块数组；输入为空返回 []，不超阈值返回单元素数组。
+ * @returns Array of chunks; [] for empty input, a single-element array if under the threshold.
  */
 export function chunkText(text: string, opts: ChunkOptions = {}): string[] {
   const target = Math.max(1000, opts.targetChars ?? DEFAULT_TARGET);
@@ -83,7 +83,7 @@ export function chunkText(text: string, opts: ChunkOptions = {}): string[] {
     const candidate = buf ? `${buf}\n\n${unit}` : unit;
     if (candidate.length > target && buf) {
       chunks.push(buf);
-      // 重叠：用上一块末尾 overlap 字符作为下一块开头
+      // Overlap: use the last `overlap` characters of the previous chunk as the start of the next
       const tail = overlap > 0 ? buf.slice(-overlap) : "";
       buf = tail ? `${tail}\n\n${unit}` : unit;
     } else {
@@ -94,7 +94,7 @@ export function chunkText(text: string, opts: ChunkOptions = {}): string[] {
   return chunks;
 }
 
-/** 粗略估算字符串的 token 数（保守 len/3）。用于判断是否需要分块。 */
+/** Roughly estimates a string's token count (conservative len/3). Used to decide whether chunking is needed. */
 export function estimateTokens(text: string): number {
   return Math.ceil((text ?? "").length / 3);
 }

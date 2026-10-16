@@ -1080,13 +1080,13 @@ function resolveConfigPath(): string | null {
 function resolveDefaultDataDir(): string {
   const home = getEnv("HOME") ?? getEnv("USERPROFILE") ?? "/tmp";
 
-  // New canonical location: everything related to standalone/Hermes-mode TDAI
+  // New canonical location: everything related to standalone-mode TDAI
   // is collected under ~/.memory-tencentdb/ to avoid scattering top-level dirs
   // in $HOME. The Gateway data dir lives at:
   //
   //   ~/.memory-tencentdb/memory-tdai/
   //
-  // Note: this only governs the standalone/Hermes fallback. Under the openclaw
+  // Note: this only governs the standalone fallback. Under the openclaw
   // host the plugin data dir is decided by `resolveStateDir() + "memory-tdai"`
   // (typically ~/.openclaw/memory-tdai/) which is intentionally NOT changed.
   const root = getEnv("MEMORY_TENCENTDB_ROOT") ?? path.join(home, ".memory-tencentdb");
@@ -1094,8 +1094,7 @@ function resolveDefaultDataDir(): string {
 
   // Backward compatibility: if the new location does not yet exist but the
   // legacy ~/memory-tdai still has data, keep using the legacy dir so existing
-  // users don't silently lose their memory store. The install script
-  // (install_hermes_memory_tencentdb.sh, Step 0) will migrate it on next run.
+  // users don't silently lose their memory store.
   try {
     if (!fs.existsSync(newDefault)) {
       const legacy = path.join(home, "memory-tdai");

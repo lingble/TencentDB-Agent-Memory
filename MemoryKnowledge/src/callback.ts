@@ -27,7 +27,7 @@ export interface StatusCallbackPayload {
   summary: string | null;
   sync_error: string | null;
   timestamp: string;
-  /** 与本次 ingest 进度回调同一代际；Panel 用以拒绝 clear 后的迟到 progress */
+  /** Same generation as this ingest's progress callbacks; Panel uses it to reject late progress after a clear */
   run_id?: string;
 }
 
@@ -37,7 +37,7 @@ export interface IngestProgressCallback {
   team_id: string;
   event: "ingest_progress";
   progress: IngestProgress;
-  /** 单次 ingest 代际 id；与终态 callback 的 run_id 一致 */
+  /** Generation id of a single ingest run; matches the run_id of the terminal callback */
   run_id?: string;
 }
 
@@ -127,7 +127,7 @@ export function buildProgressFn(
 /**
  * Generate wiki summary via LLM.
  * Reads page titles + descriptions, asks LLM for a ≤100 char Chinese summary.
- * 复用 createLlmClient（自动走正确协议 openai/anthropic + Langfuse 追踪 + 超时处理）。
+ * Reuses createLlmClient (automatically picks the right openai/anthropic protocol + Langfuse tracing + timeout handling).
  */
 import { createLlmClient } from "./engines/wiki/ingest-v2/llm.js";
 

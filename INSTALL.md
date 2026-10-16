@@ -1,6 +1,6 @@
 # TencentDB Agent Memory — Installation Guide
 
-← Back to [README.md](./README.md) · 简体中文: [INSTALL_CN.md](./INSTALL_CN.md)
+← Back to [README.md](./README.md)
 
 This document covers three installation modes:
 
@@ -125,7 +125,7 @@ org structure in the panel and (b) pick them from within an agent session.
 > | Codex | [`agents/codex/`](./agents/codex/) |
 > | DeepSeek Harness | [`agents/dsh/`](./agents/dsh/) |
 > | OpenCode | [`agents/opencode/`](./agents/opencode/) |
-> | Hermes / OpenClaw / Others | [`agents/README.md`](./agents/README.md) |
+> | OpenClaw / Others | [`agents/README.md`](./agents/README.md) |
 
 ---
 
@@ -254,15 +254,16 @@ Every memory entry attaches to a `team / agent / task` triple:
      > body to **equal the user_id of the calling key** (i.e. you can only create Teams
      > you own), otherwise it returns `permission_denied`. Once created you are the
      > owner and admin, and can manage assets / run sessions inside this Team right away.
-2. **Agent**: enter a Team → left sidebar **"Agents"** → New
+2. **Agent**: enter a Team → left sidebar **"Agents"** → **"New Agent"**
    - Fill a clear `description` + `system prompt` (the agent's role)
    - e.g. `bug-fix engineer`, `frontend reviewer`, `SQL tuner`
 3. **Task** (optional): left sidebar **"Task Board"** → **"New Task"**
    - A Task is the concrete piece of work: "fix login XSS", "ship v1.4"
-   - Memories link to Tasks; skipping Task still works but L2/L3 lose the
-     Task dimension
-   - To give the first session a "skip Task" shortcut, configure `defaultTaskId`
-     on the proxy (see below)
+   - Memories link to Tasks. Task is optional, but note that the interactive
+     session-init **bypasses the session** (no memory injection) when the chosen
+     Team has 0 Tasks and `sessionInit.defaultTaskId` is not configured. If you
+     want a "skip Task" entry in the picker, configure `defaultTaskId` on the
+     proxy (see [below](#optional-sessioninitdefaulttaskid-the-no-task-binding-option))
 
 Get **at least 1 Team** ready (admin-created in the panel, or self-served by a
 business user via the API above), **at least 1 Agent** inside it; Task is optional.
@@ -306,6 +307,13 @@ tool to walk you through three consecutive picks:
 └─────────────────────────────────────────────────┘
 ```
 
+> The diagram above is translated. The proxy currently renders these prompts in
+> Chinese, e.g. `请选择本次会话所属的 Team：` ("Please pick the Team for this
+> session") and the skip option `本次不关联（跳过注入，直接放行）` ("Don't bind
+> this time — skip injection and pass through"). Before the Team pick, it may
+> also ask `本次对话是否要关联团队资产？` ("Link team assets to this
+> conversation?"); answering no bypasses injection for the session.
+
 **Answer each with CC's usual arrow-key + Enter**. Once done:
 
 - Proxy binds this session to that team/agent/task
@@ -322,9 +330,9 @@ same `claude` process reuse the binding.
 
 After a chat, look in the panel:
 
-- Left sidebar → **Memory** → Chat Memory: L0 dialogue sliced into scenes
+- Left sidebar → **Chat_Memory**: L0 dialogue sliced into scenes
 - **Agent detail** page → Profile: L2 scenes + L3 persona accumulate
-- **Skill** list: if the LLM decides "this is a reusable how-to", it gets
+- **Skills** list: if the LLM decides "this is a reusable how-to", it gets
   auto-extracted into a Skill
 
 Memory-core `/health` also shows whether the pipeline is doing work:
@@ -403,7 +411,7 @@ Open [http://localhost:8125](http://localhost:8125).
 
 ## Using Proxy with Agents
 
-The Proxy supports 9 agent clients. **Full setup instructions, adaptation details, and FAQs** for each agent are in the [`agents/`](./agents/) directory:
+The Proxy supports 8 agent clients. **Full setup instructions, adaptation details, and FAQs** for each agent are in the [`agents/`](./agents/) directory:
 
 | Agent | Config method | Docs |
 |-------|---------------|------|
@@ -413,7 +421,6 @@ The Proxy supports 9 agent clients. **Full setup instructions, adaptation detail
 | **Codex** | `~/.codex/config.toml` (⚠️ first turn requires Plan mode) | [`agents/codex/`](./agents/codex/) |
 | **DeepSeek Harness (dsh)** | `~/.dsh/settings.yaml` + `.credentials.yaml` | [`agents/dsh/`](./agents/dsh/) |
 | **OpenCode** | `~/.config/opencode/opencode.json` | [`agents/opencode/`](./agents/opencode/) |
-| **Hermes** | `~/.hermes/config.yaml` + header preselect | [`agents/hermes/`](./agents/hermes/) |
 | **OpenClaw** | `~/.openclaw/openclaw.json` + header preselect | [`agents/openclaw/`](./agents/openclaw/) |
 | **Pi** | `pi-plugin` extension (env vars) | [`MemoryCore/pi-plugin/`](./MemoryCore/pi-plugin/) |
 | **Other platforms** | Header preselect (generic) | [`agents/README.md`](./agents/README.md) |
@@ -458,7 +465,7 @@ Injected automatically by the `pi-plugin` extension:
 | `x-task-id` | `TDAI_TASK_ID` — **optional**. Omit for broad recall across the agent's memories; set to narrow recall to a task. A stale/unknown `task_id` is dropped (not a hard mismatch), so it never blocks registration. (See [`Known limitation: x-task-id`](#known-limitation-x-task-id) for the header preselect agents that still require it.) |
 | `x-conversation-id` | dynamic per Pi session (extension `before_provider_headers` hook) |
 
-Unlike the header-preselect agents (Hermes / OpenClaw), Pi does **not** require `x-task-id`: `task_id` is an optional business dimension in the kernel, and the proxy registers from `team + agent` alone (broad recall when the task is absent). If the required identity env vars (`TDAI_USER_KEY`, `TDAI_TEAM_ID`, `TDAI_AGENT_ID`) are missing, the plugin warns at load and skips registration so Pi still starts.
+Unlike the header-preselect agents (such as OpenClaw), Pi does **not** require `x-task-id`: `task_id` is an optional business dimension in the kernel, and the proxy registers from `team + agent` alone (broad recall when the task is absent). If the required identity env vars (`TDAI_USER_KEY`, `TDAI_TEAM_ID`, `TDAI_AGENT_ID`) are missing, the plugin warns at load and skips registration so Pi still starts.
 
 ## Optional: `sessionInit.defaultTaskId` (the "no task binding" option)
 
@@ -467,8 +474,8 @@ only lists the Tasks the user actually created in the panel. If they
 haven't created any, or they simply don't want to bind this session to
 any Task, the form gets stuck / bypasses. Setting
 `sessionInit.defaultTaskId` fixes that: the proxy **prepends a virtual
-Task entry** — labeled `本次不关联任务` (*"Don't bind a task this
-time"*) — to the head of every team's task list. Picking it registers
+Task entry** — labeled `暂时跳过` (*"Skip for now"*) — to the head
+of every team's task list. Picking it registers
 the session against that fallback `task_id`, so the flow completes
 cleanly without any real Task being attached.
 
@@ -540,7 +547,7 @@ asset tool it actually invoked this turn** (`<skill_tools>`,
 or not (what key info it got, what detour it avoided, or why the call
 missed). Tools that were **not** invoked are omitted; if nothing was
 invoked, the reply must still emit the fixed line
-`【资产反思】本轮未使用任何云端资产工具。`
+`【资产反思】本轮未使用任何云端资产工具。` ("[Asset reflection] No cloud asset tools were used this turn.")
 
 This is designed as an **internal effectiveness probe**: you point a
 subset of traffic (a benchmark run, an ad-hoc curl, a Team's staging
@@ -620,9 +627,9 @@ when at least one asset injector is on the pipeline.
 
 ## Known limitation: `x-task-id`
 
-> ⚠️ **Current version limitation**: `x-task-id` is **required** for Hermes / OpenClaw.
+> ⚠️ **Current version limitation**: `x-task-id` is **required** for OpenClaw.
 >
-> The Proxy's header auto-select mechanism requires all three of `x-team-id` + `x-agent-id` + `x-task-id` to complete session registration directly. Without `x-task-id`, the Proxy falls back to an interactive form flow — which Hermes / OpenClaw cannot respond to, resulting in session bypass (no memory injection or conversation recording).
+> The Proxy's header auto-select mechanism requires all three of `x-team-id` + `x-agent-id` + `x-task-id` to complete session registration directly. Without `x-task-id`, the Proxy falls back to an interactive form flow — which OpenClaw cannot respond to, resulting in session bypass (no memory injection or conversation recording).
 >
 > Inconveniences:
 >
@@ -633,7 +640,7 @@ when at least one asset injector is on the pipeline.
 
 ## Known limitation: `x-conversation-id`
 
-> ⚠️ **Current version limitation**: Hermes and OpenClaw require `x-conversation-id` to be statically specified in the config file. This differs from Claude Code / CodeBuddy (where the SDK automatically manages the session ID).
+> ⚠️ **Current version limitation**: OpenClaw requires `x-conversation-id` to be statically specified in the config file. This differs from Claude Code / CodeBuddy (where the SDK automatically manages the session ID).
 >
 > Current limitations:
 >
@@ -645,7 +652,7 @@ when at least one asset injector is on the pipeline.
 
 ## Optional: Analytics & observability (off by default)
 
-**What it does.** The **Analytics** page in the Panel rolls up how this
+**What it does.** The **Observability** page in the Panel (admin only) rolls up how this
 stack is actually being used: how often each cloud-asset tool
 (skill / memory / knowledge) is invoked, its hit rate, LLM-side token
 and usage distribution, and per-team / per-agent comparisons — so you
@@ -662,7 +669,7 @@ them leaves the corresponding data blank:
 | Capture (wiki / code-graph tool calls) | **Knowledge** | Every wiki / code-graph tool call is written to ClickHouse `tool_call_logs` |
 | Query API | **Core** | Exposes read-only `/v3/analytics/*` endpoints that aggregate the ClickHouse tables Proxy wrote to |
 | Query API | **Knowledge** | Exposes its own read-only `/v3/analytics/*` endpoints against its `tool_call_logs` |
-| Rendering | **Panel** | On startup probes Core / Knowledge `/v3/analytics/config`; only the ones that return `configured: true` get their charts rendered, the rest show "Not enabled" |
+| Rendering | **Panel** | On startup probes Core / Knowledge `/v3/analytics/config`; only the ones that return `configured: true` get their charts rendered, the rest show as unavailable |
 
 Put briefly: **Proxy + Knowledge write, Core + Knowledge query,
 Panel renders**. You can turn on just a subset — for instance, if you
@@ -748,7 +755,7 @@ KNOWLEDGE_ANALYTICS_ADMIN_KEY=<admin sk-mem-... or any stable string>
 Leaving `KNOWLEDGE_ANALYTICS_ADMIN_KEY` empty makes the
 `/v3/analytics/*` data endpoints return `503` (the `/config` probe
 still works, and Panel just marks Wiki / Code-Graph charts as
-"Not enabled"). Once set, Panel can pull data. The simplest value is
+unavailable). Once set, Panel can pull data. The simplest value is
 the admin `user_key` (the `sk-mem-...` in `.admin-key`); any stable
 string works — the frontend sends this key as `x-tdai-user-key` when
 hitting Knowledge's analytics endpoints.
@@ -800,13 +807,13 @@ curl -s http://localhost:8424/v3/analytics/config \
 ```
 
 Both should return `{"configured": true, ...}`. Then open the Panel
-"Analytics" page — you'll see rollups of Proxy / Knowledge tool calls.
+"Observability" page — you'll see rollups of Proxy / Knowledge tool calls.
 If either side returns `configured: false`, Panel simply marks those
-charts as "Not enabled" without erroring out.
+charts as unavailable without erroring out.
 
 **Cheat sheet for common problems.**
 
-- Panel says "Not enabled" or "No data" → `curl` both `/config`
+- Panel says the feature is unavailable or shows "No data" → `curl` both `/config`
   endpoints first; fix the ClickHouse config of whichever side reports
   `configured: false`.
 - Proxy is receiving requests but Core can't see data → the most
@@ -824,7 +831,7 @@ charts as "Not enabled" without erroring out.
 
 ## More
 
-Additional installation modes (OpenClaw, Hermes, CodeBuddy, WorkBuddy, SDK, running from source,
+Additional installation modes (OpenClaw, CodeBuddy, WorkBuddy, SDK, running from source,
 K8s, platform notes) — see
 [`deploy/global-images/README.md`](./deploy/global-images/README.md) and
 [`MemoryCore/README.md`](./MemoryCore/README.md).

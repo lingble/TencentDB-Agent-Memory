@@ -55,7 +55,6 @@ export const DEFAULT_SUPPORTED_AGENTS: SupportedAgent[] = [
   //    消费点:  handler.ts / anthropicHandler.ts session-reset pre-hook,
   //             session/codebuddy/init.ts header-preselect 早退分支
   { agent_source: "pi",          protocol: "openai-chat",      display_name: "Pi" },
-  { agent_source: "hermes",      protocol: "anthropic",        display_name: "Hermes" },
   { agent_source: "openclaw",    protocol: "anthropic",        display_name: "OpenClaw" },
 ];
 

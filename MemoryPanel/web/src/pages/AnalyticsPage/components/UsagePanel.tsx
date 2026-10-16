@@ -1,11 +1,11 @@
 /**
- * UsagePanel — 成本视角面板（成本 Tab 的内容）。
+ * UsagePanel - cost-view panel (content of the Cost Tab).
  *
- * 区块：KPI → token 趋势 → credit 趋势 → 模型分布 → 计费异常上报。
+ * Sections: KPI -> token trend -> credit trend -> model distribution -> billing anomaly reports.
  *
- * token 与 credit **分成两张趋势图**：token 量级常达千万、credit 仅数百，
- * 同图归一化会把 credit 线压到贴底看不出变化。TrendLines 按各自最大值归一，
- * 分图后每张图内量级相近。
+ * token and credit are **split into two trend charts**: token volume often reaches tens of millions while credit is only in the hundreds,
+ * so normalizing them on one chart flattens the credit line to the bottom with no visible change. TrendLines normalizes each by its own max,
+ * and after splitting, values within each chart are of similar magnitude.
  */
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';

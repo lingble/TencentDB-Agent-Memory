@@ -73,7 +73,7 @@ export interface PipelineContext {
   assetCapabilities?: AssetCapabilityFlags;
   agentDetail?: unknown;
   taskDetail?: unknown;
-  /** header-only agent (pi/hermes/openclaw) 语义 flag, addendum §5 第 10 项 */
+  /** header-only agent (pi/openclaw) 语义 flag, addendum §5 第 10 项 */
   memoryTurn: boolean;
   /** mem 命令本 turn peek 到, prewarm 需短路 */
   memCommandPending: boolean;

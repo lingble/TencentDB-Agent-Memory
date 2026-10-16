@@ -48,9 +48,9 @@ export function createDb(opts: CreateDbOptions): { db: Db; raw: Database.Databas
  * via drizzle-kit, but for runtime we ensure tables exist).
  */
 export function migrate(_db: Db, raw: Database.Database): void {
-  // 前置：把老 user-scoped 凭据表清掉（新结构无法 IF NOT EXISTS 上位）。
-  // 判据：resource_id 列缺失 = 老结构，DROP 后由下方 CREATE 重建。
-  // 该能力尚未发布，无真实存量凭据。
+  // Prerequisite: drop the old user-scoped credential table (the new schema can't take over via IF NOT EXISTS).
+  // Criterion: missing resource_id column = old schema; after DROP, the CREATE below rebuilds it.
+  // This feature hasn't shipped yet, so there are no real existing credentials.
   if (
     tableExists(raw, "knowledge_source_credential") &&
     !hasColumn(raw, "knowledge_source_credential", "resource_id")
@@ -153,11 +153,11 @@ export function migrate(_db: Db, raw: Database.Database): void {
     CREATE TABLE IF NOT EXISTS knowledge_source_credential (
       service_id       TEXT NOT NULL,
       resource_type    TEXT NOT NULL,        -- 'code-graph' | 'wiki'
-      resource_id      TEXT NOT NULL,        -- = code_graph_id 或 wiki_id
-      provider_id      TEXT NOT NULL,        -- 'gongfeng' / 'iwiki' / ...（非键）
+      resource_id      TEXT NOT NULL,        -- = code_graph_id or wiki_id
+      provider_id      TEXT NOT NULL,        -- 'gongfeng' / 'iwiki' / ... (not part of the key)
       cred_kind        TEXT NOT NULL,        -- 'bearer' | 'basic'
-      cred_secret      TEXT NOT NULL,        -- base64(UTF-8 令牌)
-      cred_username    TEXT,                 -- 仅 basic
+      cred_secret      TEXT NOT NULL,        -- base64(UTF-8 token)
+      cred_username    TEXT,                 -- basic only
       cred_extra_json  TEXT,
       last_verified_at TEXT,
       created_by       TEXT,

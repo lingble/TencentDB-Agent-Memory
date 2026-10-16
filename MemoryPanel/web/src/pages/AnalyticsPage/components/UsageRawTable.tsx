@@ -1,16 +1,16 @@
 /**
- * UsageRawTable — 用量原始留档（usage_raw）。
+ * UsageRawTable — raw usage archive (usage_raw).
  *
- * ⚠️ 语义分级（不要把整张表当「异常表」）：
- * 写入侧 `MemoryProxy/src/clickhouse.ts:getRawUsageReason()` 对 5 个 reason 的定义
- * 并非同一性质——
- *   - `non_tokenhub`  ：上游 URL 不含 tokenhub，即该请求**不走 TokenHub 计费通道**，
- *                       原样留档以备追溯。这是**正常状态**，量级通常与总请求数相当。
- *   - 其余 4 个       ：TokenHub 通道内的真实问题（模型不在定价表 / 缺字段 /
- *                       credit 异常 / 上报失败），会造成计费缺口，**需要处理**。
+ * ⚠️ Semantic tiers (don't treat the whole table as an "anomaly table"):
+ * On the write side, `MemoryProxy/src/clickhouse.ts:getRawUsageReason()` defines the 5 reasons
+ * with different natures:
+ *   - `non_tokenhub`  : the upstream URL doesn't contain tokenhub, i.e. the request **doesn't go through the TokenHub billing channel**,
+ *                       and is archived as-is for traceability. This is a **normal state**, usually on the same order as total requests.
+ *   - the other 4     : real problems within the TokenHub channel (model not in the pricing table / missing fields /
+ *                       credit anomaly / report failure), which cause billing gaps and **need handling**.
  *
- * 因此：reason 列按性质着色（non_tokenhub 中性、其余 danger），并在顶部给出
- * 分级构成，避免把「13,179 条正常留档 + 10 条真异常」显示成「13,189 条异常」。
+ * Therefore the reason column is colored by nature (non_tokenhub neutral, others danger), and the top shows
+ * a tiered breakdown, to avoid showing "13,179 normal archives + 10 real anomalies" as "13,189 anomalies".
  */
 import { useTranslation } from 'react-i18next';
 import { Button, Card, Justify, Select, Table, Text } from 'tea-component';
@@ -27,7 +27,7 @@ import { fmtInt } from '../utils/formatters';
 const { autotip, expandable } = Table.addons;
 const ALL_REASONS = '__ALL__';
 
-/** 需要人工处理的 reason（non_tokenhub 属正常留档，不在此列）。 */
+/** Reasons that need manual handling (non_tokenhub is a normal archive and isn't included). */
 const ACTIONABLE_REASONS: readonly UsageRawReason[] = [
   'unknown_model',
   'invalid_format',
@@ -93,7 +93,7 @@ export function UsageRawTable({
       render: (r: UsageRawRow) => {
         if (!r.reason) return '—';
         const label = t(`analytics.usage.reason.${r.reason}`, { defaultValue: r.reason });
-        // 只有真问题才用 danger；non_tokenhub 是正常通道标记，用次要色
+        // Only real problems use danger; non_tokenhub is a normal channel marker, so use the secondary color
         return isActionable(r.reason) ? (
           <Text theme="danger" overflow>
             {label}
@@ -192,7 +192,7 @@ export function UsageRawTable({
                   { value: ALL_REASONS, text: t('analytics.usage.raw.allReasons') },
                   ...USAGE_RAW_REASONS.map((r) => ({
                     value: r,
-                    text: `${t(`analytics.usage.reason.${r}`, { defaultValue: r })}（${fmtInt(reasonCounts[r] ?? 0)}）`,
+                    text: `${t(`analytics.usage.reason.${r}`, { defaultValue: r })} (${fmtInt(reasonCounts[r] ?? 0)})`,
                   })),
                 ]}
                 listWidth={260}

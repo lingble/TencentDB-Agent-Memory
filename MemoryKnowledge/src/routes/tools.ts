@@ -378,17 +378,17 @@ async function executeWikiTool(
 // Reuse the query specs from code-graph routes
 
 /**
- * 对外暴露的 codegraph 查询工具名（不含 get_info，get_info 在调用方特殊处理）。
- * 单一真相源：tools.ts 的 CODE_GRAPH_TOOLS、code-graph.ts 的路由注册、
- * toCodeGraphToolName 的校验列表，全部从这里来。
+ * Externally exposed codegraph query tool names (excluding get_info, which callers handle specially).
+ * Single source of truth: CODE_GRAPH_TOOLS in tools.ts, route registration in code-graph.ts,
+ * and toCodeGraphToolName's validation list all derive from here.
  */
 export const CODEGRAPH_QUERY_TOOL_NAMES: readonly string[] = [
   "search", "explore", "callers", "callees", "impact", "node", "status", "files",
 ];
 
 /**
- * 把对外暴露的工具名映射为 executeTool 接受的内部工具名。
- * 对外统一用短名（node / status / files），内部统一加 codegraph_ 前缀。
+ * Map an externally exposed tool name to the internal tool name accepted by executeTool.
+ * Externally, short names are used (node / status / files); internally the codegraph_ prefix is added.
  */
 export function toCodeGraphToolName(externalName: string): string | undefined {
   return CODEGRAPH_QUERY_TOOL_NAMES.includes(externalName) ? `codegraph_${externalName}` : undefined;

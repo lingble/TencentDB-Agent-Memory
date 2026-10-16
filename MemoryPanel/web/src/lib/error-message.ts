@@ -7,8 +7,8 @@ export interface ErrorEnvelopeLike {
 }
 
 /**
- * 已知错误码集合 —— locale 文件中 error.* key 的来源。
- * 保留列表用于快速判断 code 是否有效（比 i18n.exists 更显式）。
+ * Set of known error codes - the source of error.* keys in the locale files.
+ * The list is kept to quickly check whether a code is valid (more explicit than i18n.exists).
  */
 const KNOWN_ERROR_CODES: ReadonlySet<string> = new Set([
   'UNAUTHORIZED', 'INVALID_USER_KEY', 'MISSING_USER_KEY', 'MISSING_INSTANCE_ID',
@@ -26,19 +26,19 @@ const KNOWN_ERROR_CODES: ReadonlySet<string> = new Set([
   'MISSING_FILES', 'TOO_MANY_FILES', 'FILE_TOO_LARGE', 'TOTAL_TOO_LARGE',
   'MISSING_CODE_GRAPH_ID', 'CODE_GRAPH_NOT_FOUND', 'KNOWLEDGE_NOT_FOUND',
   'INVALID_ARGUMENT', 'VALIDATION_ERROR', 'RATE_LIMITED', 'INTERNAL_ERROR',
-  // 用自持 user_key 首次登录时建号失败。必须显式登记：否则会落到下面的正则兜底，
-  // 被 unauthorized: invalid_user_key 模式误配成"key 无效"，与真实原因（建号失败）
-  // 完全不符，严重误导排查。
+  // Account creation failure on first login with a self-held user_key. Must be registered explicitly, otherwise it falls through to the regex fallback below
+  // and gets mismatched by the unauthorized: invalid_user_key pattern as "invalid key", which has nothing to do with the real cause (account creation failure)
+  // and seriously misleads troubleshooting.
   'USER_CREATE_FAILED',
 ]);
 
 /**
- * 按错误码查找本地化文案。
- * 通过 i18n 实例动态翻译，跟随用户当前语言切换。
+ * Look up localized text by error code.
+ * Translated dynamically through the i18n instance, following the user's current language.
  */
 function lookupErrorCode(code: string): string | null {
   if (KNOWN_ERROR_CODES.has(code)) return i18n.t('error.' + code);
-  // snake_case 归一：后端可能返回小写
+  // Normalize snake_case: the backend may return lowercase
   if (/^[a-z][a-z0-9_]+$/.test(code)) {
     const upper = code.toUpperCase();
     if (KNOWN_ERROR_CODES.has(upper)) return i18n.t('error.' + upper);
@@ -53,8 +53,8 @@ function getMessagePatterns(): Array<[RegExp, string]> {
     [/missing.*team_id/i, i18n.t('error.MISSING_TEAM_ID')],
     [/missing.*agent_id/i, i18n.t('error.MISSING_AGENT_ID')],
     [/not team member/i, i18n.t('error.NOT_TEAM_MEMBER')],
-    // 注：asset_not_bindable / visibility_restricted 在 PRIORITY_MESSAGE_PATTERNS 里前置匹配，
-    // 因为它们会被 permission_denied 前缀吞掉。
+    // Note: asset_not_bindable / visibility_restricted are matched earlier in PRIORITY_MESSAGE_PATTERNS,
+    // because they would otherwise be swallowed by the permission_denied prefix.
     [/permission[_\s-]?denied/i, i18n.t('error.PERMISSION_DENIED')],
     [/fetch failed|networkerror|failed to fetch/i, i18n.t('error.network')],
     [/timeout|aborted/i, i18n.t('error.timeout')],
@@ -64,17 +64,45 @@ function getMessagePatterns(): Array<[RegExp, string]> {
 }
 
 /**
- * 优先匹配的语义 pattern —— 在 extractCodeLike 兜底提取之前先跑。
+ * Semantic patterns matched first - run before the extractCodeLike fallback extraction.
  *
- * 场景：内核抛的错误消息形如 `permission_denied: visibility_restricted` —— 前缀 `permission_denied`
- * 会被 extractCodeLike 提取成 `PERMISSION_DENIED` 直接命中通用文案，掩盖后面的 `visibility_restricted`
- * 语义关键词。因此凡是"通用错误码 + 细化子原因"的组合都必须在这里精准命中。
+ * Scenario: kernel error messages look like `permission_denied: visibility_restricted` - the `permission_denied` prefix
+ * would be extracted by extractCodeLike as `PERMISSION_DENIED` and hit the generic text directly, masking the trailing `visibility_restricted`
+ * semantic keyword. So every "generic error code + specific sub-reason" combination must be matched precisely here.
  */
 function getPriorityPatterns(): Array<[RegExp, string]> {
   return [
     [/visibility[_\s-]?restricted/i, i18n.t('error.ASSET_PRIVATE_INACCESSIBLE')],
     [/asset_not_bindable/i, i18n.t('error.ASSET_NOT_BINDABLE')],
   ];
+}
+
+/**
+ * Chinese sentences the Panel backend puts directly into `message` (not CODE enums;
+ * see panel-api-doc.md §4.2). The Chinese literals below are a protocol contract with
+ * the backend and must stay in Chinese; they are mapped to English en-US text so the
+ * raw server sentence is never shown to users.
+ */
+function mapBackendChineseMessage(text: string): string | null {
+  if (!text) return null;
+  // meta/* create duplicate check (409): "已存在同名{entity}「{name}」，请更换名称后重试。"
+  const dup = text.match(/已存在同名(.*?)「(.*)」，请更换名称后重试/);
+  if (dup) {
+    const entityKey = dup[1] === '用户' ? 'user' : dup[1] === '团队' ? 'team' : 'other';
+    return i18n.t('error.DUPLICATE_NAME', {
+      entity: i18n.t(`error.DUPLICATE_NAME.entity.${entityKey}`),
+      name: dup[2],
+    });
+  }
+  // chat-memory/allocate duplicate allocation (409)
+  if (text.includes('这条记忆已经分配给该 Agent，无需重复分配。')) {
+    return i18n.t('error.ALREADY_ALLOCATED_MEMORY');
+  }
+  // chat-memory/allocate self-allocation (400)
+  if (text.includes('不能把该 Agent 自己的记忆再分配给自己。')) {
+    return i18n.t('error.CANNOT_ALLOCATE_SELF_CHAT_MEMORY');
+  }
+  return null;
 }
 
 function tryParseJson(input: string): unknown | null {
@@ -114,7 +142,10 @@ export function mapErrorCode(codeOrMessage: number | string | undefined, fallbac
   const raw = String(codeOrMessage ?? '').trim();
   const text = fallbackMessage ?? raw;
 
-  // 先跑优先 pattern：避免 extractCodeLike 用 `permission_denied` 前缀吃掉子原因关键词。
+  const backendChinese = mapBackendChineseMessage(text) ?? mapBackendChineseMessage(raw);
+  if (backendChinese) return backendChinese;
+
+  // Run the priority patterns first: prevents extractCodeLike from swallowing the sub-reason keyword via the `permission_denied` prefix.
   for (const [pattern, message] of getPriorityPatterns()) {
     if (pattern.test(text) || pattern.test(raw)) return message;
   }

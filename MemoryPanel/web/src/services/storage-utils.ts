@@ -1,16 +1,16 @@
 /**
- * storage-utils.ts — 本地演示数据层的共享底座。
+ * storage-utils.ts - shared foundation of the local demo data layer.
  *
- * 供 agent-template-store / asset-scope-store / user-asset-store /
- * account-store / user-profile-store 共用：
- *   - safeParse：容错的 JSON.parse，解析失败时回退默认值；
- *   - emitChange / CHANGE_EVENT：写操作后广播一个全局事件，配合
- *     useChangeNotifier 让订阅方（各 useXxx hook）自动重渲染；
- *   - useChangeNotifier：简易 forceUpdate，监听 CHANGE_EVENT 与浏览器
- *     原生 'storage' 事件（跨 tab 同步）。
+ * Shared by agent-template-store / asset-scope-store / user-asset-store /
+ * account-store / user-profile-store:
+ *   - safeParse: fault-tolerant JSON.parse, falling back to a default value on parse failure;
+ *   - emitChange / CHANGE_EVENT: broadcast a global event after write operations, working with
+ *     useChangeNotifier so subscribers (the useXxx hooks) re-render automatically;
+ *   - useChangeNotifier: simple forceUpdate, listening to CHANGE_EVENT and the browser's
+ *     native 'storage' event (cross-tab sync).
  *
- * 这些 store 均为前端演示阶段的 localStorage 实现，后端上线后整批替换为
- * fetch 即可，UI 层不需要改。
+ * These stores are all localStorage implementations for the frontend demo phase; once the backend is live, replace them all with
+ * fetch, and the UI layer needs no changes.
  */
 
 import { useEffect, useState } from 'react';
@@ -35,13 +35,13 @@ export function emitChange(): void {
   }
 }
 
-/** 简易 forceUpdate：localStorage / 自定义事件触发后 +1。 */
+/** Simple forceUpdate: +1 after a localStorage / custom event fires. */
 export function useChangeNotifier(): number {
   const [tick, setTick] = useState(0);
   useEffect(() => {
     const onChange = () => setTick((v) => v + 1);
     window.addEventListener(CHANGE_EVENT, onChange);
-    window.addEventListener('storage', onChange); // 跨 tab 同步
+    window.addEventListener('storage', onChange); // cross-tab sync
     return () => {
       window.removeEventListener(CHANGE_EVENT, onChange);
       window.removeEventListener('storage', onChange);

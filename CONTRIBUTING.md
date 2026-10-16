@@ -25,10 +25,10 @@ tdai-memory-openclaw-plugin/
 ├── deploy/              # Image build & local deploy scripts
 │   ├── global-images/   # One-command local stack
 │   ├── dockerhub/       # Docker Hub publish recipe
-│   └── panel-knowledge-combined/  # memory-hub image build
-├── INSTALL.md / INSTALL_CN.md
+│   └── panel-knowledge-combined/  # memory-hub image build (Panel UI + Knowledge Service in one image)
+├── INSTALL.md
 ├── CHANGELOG.md
-└── README.md / README_CN.md
+└── README.md
 ```
 
 ## Prerequisites

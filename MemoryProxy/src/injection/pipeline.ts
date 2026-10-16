@@ -474,7 +474,7 @@ export class InjectionPipeline {
             ctx.tools.push({
               name: block.metadata.tool_name as string,
               description: block.content,
-              parameters: (block.metadata.parameters as Record<string, unknown>) ?? {},
+              parameters: (block.metadata.parameters as Record<string, unknown>) ?? { type: "object", properties: {} },
             });
           }
         }
@@ -489,7 +489,7 @@ export class InjectionPipeline {
             newTools.push({
               name: block.metadata.tool_name as string,
               description: block.content,
-              parameters: (block.metadata.parameters as Record<string, unknown>) ?? {},
+              parameters: (block.metadata.parameters as Record<string, unknown>) ?? { type: "object", properties: {} },
             });
           }
         }

@@ -3,10 +3,15 @@
 TypeScript SDK for **TencentDB Agent Memory** — v3 strict-isolation data-plane
 API + `/v3/skill/*` + `/v3/meta/*` metadata management.
 
-- 默认 `MemoryClient` 就是 v3 严格 isolation 版本（构造时必须传 `teamId` /
-  `agentId` / `userId`）。
-- 老代码若之前从 `.../v2/v3` 子路径导入，可继续用 —— 子路径保留为向后兼容
-  别名，与顶级 export 是同一个类。
+- The default `MemoryClient` is the v3 strict-isolation client (`teamId` /
+  `agentId` / `userId` are required at construction).
+- Code that previously imported from the `.../v2/v3` subpath keeps working: the
+  `./v3` subpath is kept as a backward-compatible alias and exports the same
+  class as the top-level entry.
+- The v2 compatibility client (including its offload methods) has been removed
+  from this package; the `Offload*` request/response types are still exported.
+  COS file reads use `createMemoryFileReader` / `MemoryFileReader` from the root
+  entry.
 
 ## Install
 
@@ -21,40 +26,56 @@ import { MemoryClient } from "@tencentdb-agent-memory/memory-sdk-ts-v2";
 
 const client = new MemoryClient({
   endpoint: "http://127.0.0.1:8420",
-  apiKey: "your-user-key",           // 从面板拿的 sk-mem-…
+  apiKey: "your-user-key",           // sk-mem-… key from the Panel
   serviceId: "your-memory-instance-id",
   teamId: "team-xxx",
   agentId: "agt-xxx",
   userId: "usr-xxx",
-  sessionId: "sess-1",                // 可选：省略/清空后 L0/L1 跨 session 聚合
+  sessionId: "sess-1",                // optional; when omitted/cleared, L0/L1 aggregate across sessions
 });
 
-// L0：写对话
-await client.addConversation({
+// L0: add a conversation
+const added = await client.addConversation({
   messages: [
     { role: "user", content: "Hello" },
     { role: "assistant", content: "Hi!" },
   ],
 });
+console.log(added.accepted_ids);
 
-// L0：查
+// L0: query raw conversations in the current session
 const l0 = await client.queryConversation({ limit: 20, offset: 0 });
-const allSessions = await client.withIsolation({ sessionId: null }).queryConversation({ limit: 20 });
+console.log(l0.messages, l0.total);
 
-// L1 / L2 / L3
+// L0: aggregate across all sessions for the current agent/user
+const allSessions = await client.withIsolation({ sessionId: null }).queryConversation({ limit: 20 });
+console.log(allSessions.total);
+
+// L1: search structured memories
 const l1 = await client.searchAtomic({ query: "user preferences", limit: 5 });
+console.log(l1.items);
+
+// L2: read a scenario file
 const scene = await client.readScenario({ path: "work.md" });
+console.log(scene.content);
+
+// L3: read core memory
 const core = await client.readCore();
+console.log(core.content);
 ```
 
-v3 数据面差异要点：
+Key points of the v3 data plane:
 
-- 路径统一走 `/v3/*`
-- 构造时 `teamId` / `agentId` / `userId` 都是必填（严格 isolation）
-- `sessionId` 可选：
-  - 传：L0/L1 限定在单个 session
-  - 不传或 `withIsolation({ sessionId: null })`：L0/L1 跨 session 聚合到 team+agent+user
-  - L2/L3 是 team+agent profile，不消费 `sessionId`
+- All paths use `/v3/*`.
+- `teamId` / `agentId` / `userId` are all required at construction (strict
+  isolation), so writes and queries cannot leak into another team, Agent, or user.
+- `sessionId` is optional:
+  - When set, L0/L1 are scoped to that single session.
+  - When omitted, or with `withIsolation({ sessionId: null })`, L0/L1 aggregate
+    across sessions for the team + agent + user.
+  - L2/L3 are team + agent profiles and do not use `sessionId`.
+  - `addConversation()` still needs a session: set `sessionId` in the
+    constructor or pass `session_id` on the call, otherwise it throws.
 
 ## API Methods
 
@@ -123,7 +144,7 @@ if (!res.all_cleared) {
 ```typescript
 import { MemoryGenerationLogClient, MemoryPromptClient } from "@tencentdb-agent-memory/memory-sdk-ts-v2";
 
-const config = { endpoint, apiKey, serviceId };
+const config = { endpoint: "https://memory.example.com", apiKey: "<token>", serviceId: "instance-1" };
 const prompts = new MemoryPromptClient({ ...config, teamId: "team-1", agentId: "agent-1" });
 const created = await prompts.create({ name: "decisions", layer: "l1", prompt: "Focus on decisions." });
 await prompts.apply({ memory_prompt_id: created.memory_prompt_id, layer: "l1", agent_ids: ["agent-1"] });
@@ -132,6 +153,10 @@ const effective = await prompts.getEffective({ layer: "l1" });
 const logs = new MemoryGenerationLogClient(config);
 const provenance = await logs.getByMemoryId("memory-id", "l1");
 ```
+
+With no filters, `listSettings()` lists every binding in the current Instance;
+pass `memory_prompt_id` to find which targets a Prompt is bound to. `agent_id`
+requires `team_id`.
 
 `MemoryPromptClient` covers CRUD, effective resolution, current binding queries, apply/clear and setting logs.
 
@@ -174,9 +199,9 @@ import { MetadataClient } from "@tencentdb-agent-memory/memory-sdk-ts-v2";
 
 const meta = new MetadataClient({
   endpoint: "http://127.0.0.1:8420",
-  apiKey: process.env.KERNEL_AUTH_TOKEN!,
+  apiKey: process.env.KERNEL_AUTH_TOKEN!,  // Gateway Bearer token; do not hard-code
   serviceId: "knowledge-debug",  // x-tdai-service-id
-  // userKey: process.env.TDAI_USER_KEY,
+  // userKey: process.env.TDAI_USER_KEY,  // optional; needed for system_admin endpoints such as user/create and user/delete
 });
 ```
 

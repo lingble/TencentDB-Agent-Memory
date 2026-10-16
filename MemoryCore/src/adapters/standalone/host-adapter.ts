@@ -1,5 +1,5 @@
 /**
- * StandaloneHostAdapter — HostAdapter for the TDAI Gateway (Hermes sidecar).
+ * StandaloneHostAdapter — HostAdapter for the standalone TDAI Gateway.
  *
  * Does NOT depend on OpenClaw. Context is constructed from Gateway config
  * and per-request parameters (session_id, user_id, etc.).

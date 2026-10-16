@@ -1,14 +1,14 @@
 /**
- * iWiki MCP 客户端（Streamable HTTP，JSON-RPC 2.0）。
+ * iWiki MCP client (Streamable HTTP, JSON-RPC 2.0).
  *
- * 封装三个 MCP 工具：列子级、取正文、取元数据。
- * 具体字段名/参数形态以 MCP 服务端契约为准，不在源码注释中固化
- * （避免随代码外泄上游实现细节；变更时以实测为准）。
+ * Wraps three MCP tools: list children, get body, get metadata.
+ * Exact field names/parameter shapes follow the MCP server contract and are not fixed in source comments
+ * (to avoid leaking upstream implementation details with the code; when things change, observed behavior wins).
  *
- * 认证：个人令牌（Bearer），由调用方通过 SourceContext 注入；
- * 端点地址来自部署配置 `WIKI_SOURCE_IWIKI_MCP_URL`，无内置默认值。
+ * Auth: personal token (Bearer), injected by the caller via SourceContext;
+ * the endpoint comes from deployment config `WIKI_SOURCE_IWIKI_MCP_URL`, with no built-in default.
  *
- * 响应包络：{ result: { content: [{ type:"text", text:"..." }] } }；错误走 { error: { message } }
+ * Response envelope: { result: { content: [{ type:"text", text:"..." }] } }; errors use { error: { message } }
  */
 
 import type { SourceContext } from "../../types.js";
@@ -29,14 +29,14 @@ interface McpEnvelope {
 }
 
 /**
- * 从 { result: { content: [{text}] } } 里取出 text；已是字符串则原样返回。
+ * Extract text from { result: { content: [{text}] } }; if already a string, return as-is.
  *
- * 关键：MCP 有两层错误——
- *   1) HTTP 401/403、非 2xx、JSON-RPC 的 { error } —— 由 callTool 处理；
- *   2) **业务层失败**：JSON-RPC 成功（无 error）但 `result.isError === true`，
- *      此时 result.content 里装的是**错误文本**，不是文档正文。
- * 若不拦截第 2 层，错误文本会被下游 `filter(c => c.markdown)` 判为非空，
- * 从而把报错内容当作文档正文写进 wiki raw。故这里必须优先判 isError。
+ * Key point: MCP has two layers of errors —
+ *   1) HTTP 401/403, non-2xx, JSON-RPC { error } — handled by callTool;
+ *   2) **Business-level failure**: JSON-RPC succeeds (no error) but `result.isError === true`;
+ *      result.content then holds **error text**, not the document body.
+ * If layer 2 isn't intercepted, the error text passes the downstream `filter(c => c.markdown)` as non-empty,
+ * and the error content gets written into wiki raw as a document body. So isError must be checked first here.
  */
 function unwrap(result: unknown): unknown {
   if (result && typeof result === "object" && "content" in result) {
@@ -51,7 +51,7 @@ function unwrap(result: unknown): unknown {
     }
     const text = env.content?.[0]?.text;
     if (typeof text === "string") {
-      // 部分工具返回 JSON 字符串，部分直接返回 markdown/文本
+      // Some tools return a JSON string, others return markdown/text directly
       try {
         return JSON.parse(text);
       } catch {
@@ -91,14 +91,14 @@ async function callTool(
     const isNetwork = /fetch failed|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|UND_ERR/i.test(detail);
     throw new IWikiMcpError(
       isNetwork
-        // 注意：不要把端点地址放进错误信息 —— 它是内网地址，会随响应返回到前端。
-        ? `无法连接 iWiki MCP 端点：${detail}。请确认 WIKI_SOURCE_IWIKI_MCP_URL 配置正确且网络可达。`
+        // Note: never put the endpoint address in the error message — it's an internal address and would be returned to the frontend.
+        ? `Cannot connect to the iWiki MCP endpoint: ${detail}. Please make sure WIKI_SOURCE_IWIKI_MCP_URL is configured correctly and reachable.`
         : `iWiki MCP request failed (${toolName}): ${detail}`,
     );
   }
 
   if (resp.status === 401 || resp.status === 403) {
-    throw new IWikiMcpError("iWiki token invalid or expired（太湖个人令牌无效或已过期）", resp.status);
+    throw new IWikiMcpError("iWiki token invalid or expired (Taihu personal token is invalid or expired)", resp.status);
   }
   if (!resp.ok) {
     throw new IWikiMcpError(`iWiki MCP error (${toolName}): HTTP ${resp.status}`, resp.status);
@@ -116,7 +116,7 @@ async function callTool(
   return unwrap(json.result);
 }
 
-/** 页面树节点（实测字段：docid / title / parentid / has_children）。 */
+/** Page tree node (observed fields: docid / title / parentid / has_children). */
 export interface IWikiTreeNode {
   docid: number;
   title: string;
@@ -126,8 +126,8 @@ export interface IWikiTreeNode {
 
 function assertNodeArray(raw: unknown): IWikiTreeNode[] {
   if (Array.isArray(raw)) return raw as IWikiTreeNode[];
-  // 错误包络：{ msg:"error", message:"..." }
-  // 注意：不要把上游工具方法名写进错误信息 —— 它属内部实现细节，会随响应返回前端。
+  // Error envelope: { msg:"error", message:"..." }
+  // Note: never put upstream tool method names in error messages — they are internal implementation details and would be returned to the frontend.
   if (raw && typeof raw === "object") {
     const o = raw as Record<string, unknown>;
     if (o.msg === "error" && typeof o.message === "string") {
@@ -138,9 +138,9 @@ function assertNodeArray(raw: unknown): IWikiTreeNode[] {
 }
 
 /**
- * 拉取**直接子级**文档列表（不是整棵树）。
+ * Fetch the list of **direct child** documents (not the whole tree).
  *
- * @param parentId 父文档 id，必须是 number
+ * @param parentId parent document id; must be a number
  */
 export async function getSpacePageTree(
   ctx: SourceContext,
@@ -150,7 +150,7 @@ export async function getSpacePageTree(
   return assertNodeArray(raw);
 }
 
-/** 用 spaceKey 取空间根目录的直接子级。 */
+/** Get the direct children of a space's root directory by spaceKey. */
 export async function getSpaceRoot(
   ctx: SourceContext,
   spaceKey: string,
@@ -159,7 +159,7 @@ export async function getSpaceRoot(
   return assertNodeArray(raw);
 }
 
-/** 拉取单个文档（返回 markdown）。实测只认 docid（string）。 */
+/** Fetch a single document (returns markdown). In practice only docid (string) is accepted. */
 export async function getDocument(
   ctx: SourceContext,
   docId: string,
@@ -180,11 +180,11 @@ export async function getDocument(
 }
 
 /**
- * 文档元数据（标题/更新时间/内容类型），用于补全列表里的标题。
+ * Document metadata (title / update time / content type), used to fill in titles in the list.
  *
- * `contentType` 实测取值："FOLDER"（目录）或普通文档类型。
- * /p/<docid> 链接可能是目录页，必须靠它才能判断是否要展开子级，
- * 否则目录会被当单文档处理，导致子文档全部丢失。
+ * Observed `contentType` values: "FOLDER" (directory) or a regular document type.
+ * A /p/<docid> link may be a directory page; this is the only way to tell whether to expand children,
+ * otherwise the directory would be treated as a single document and all child documents would be lost.
  */
 export async function getMetadata(
   ctx: SourceContext,

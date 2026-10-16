@@ -1,9 +1,9 @@
 /**
- * useMemberStats — 成员维度聚合（面板侧抽样）。
+ * useMemberStats - per-member aggregation (sampled on the panel side).
  *
- * 内核无「按成员聚合」的展示接口且本期不改 Core，故对 `tool-calls/list` 分页
- * 采样后在面板侧 GROUP BY user_id。truncated 为 true 时表示采样未覆盖全量，
- * UI 必须标注口径。
+ * The kernel has no "aggregate by member" display endpoint and Core isn't changed in this phase, so `tool-calls/list` is paginated
+ * and sampled, then GROUP BY user_id on the panel side. truncated = true means sampling didn't cover everything,
+ * and the UI must label the measurement basis.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { analyticsApi, type AnalyticsRangeDays } from '@/lib/api/analytics';

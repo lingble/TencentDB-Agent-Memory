@@ -1,11 +1,11 @@
 /**
- * wiki-source routes —— 外部 wiki 的列文档 / 导入。
+ * wiki-source routes — document listing / import for external wikis.
  *
- * **只做拉取与写盘，不触发 ingest**（文档 §3.1 第 ⑦ 步）：
- * 外部导入与手工上传共用同一个 Ingest 入口，差别只在文件来源。
+ * **Only fetches and writes to disk; does not trigger ingest** (doc §3.1 step ⑦):
+ * external import and manual upload share the same Ingest entry point; the only difference is where files come from.
  *
- * 认证由 KS 注入：从 credentialStore 按 wiki_id 取凭据，
- * 组装成 SourceContext 传给 provider；provider 不自行读库。
+ * Auth is injected by KS: credentials are fetched from credentialStore by wiki_id
+ * and assembled into a SourceContext passed to the provider; providers never read the DB themselves.
  */
 
 import { Hono } from "hono";
@@ -42,10 +42,10 @@ export function createWikiSourceRoutes(deps: WikiSourceRouteDeps): Hono {
   const app = new Hono();
 
   /**
-   * POST /list —— resolveRoot + listPages，返回可勾选的节点树（扁平）。
+   * POST /list — resolveRoot + listPages, returns a selectable node tree (flat).
    *
    * body: { wiki_id, source_url, provider_id, crawl?: { mode?, maxDepth? } }
-   * crawl 省略 → 用 provider 的 defaultCrawlMode。
+   * crawl omitted → use the provider's defaultCrawlMode.
    */
   app.post("/list", async (c) => {
     const a = actor(c);
@@ -65,7 +65,7 @@ export function createWikiSourceRoutes(deps: WikiSourceRouteDeps): Hono {
     if (!sourceUrl) return c.json(wrapError(400, "source_url is required"));
     if (!providerId) return c.json(wrapError(400, "provider_id is required"));
 
-    // 遍历策略（可选）：mode 仅接受 tree/links；maxDepth 须为 ≥1 整数（仅 links 有意义）
+    // Crawl strategy (optional): mode accepts only tree/links; maxDepth must be an integer ≥1 (only meaningful for links)
     let crawl: { mode?: "tree" | "links"; maxDepth?: number } | undefined;
     if (body.crawl && typeof body.crawl === "object") {
       const raw = body.crawl as Record<string, unknown>;
@@ -85,7 +85,7 @@ export function createWikiSourceRoutes(deps: WikiSourceRouteDeps): Hono {
       };
     }
 
-    // 凭据按 wiki_id 取；不存在 → 401 NEED_CREDENTIAL（前端弹填写页）
+    // Credentials are fetched by wiki_id; missing → 401 NEED_CREDENTIAL (frontend shows the credential form)
     const ref = { type: "wiki" as const, serviceId: a.serviceId, resourceId: wikiId };
     const cred = deps.credentialStore.get(ref);
     if (!cred) {
@@ -105,7 +105,7 @@ export function createWikiSourceRoutes(deps: WikiSourceRouteDeps): Hono {
         wrapOk({
           root,
           pages,
-          // 目录节点不可下载，前端据此置灰
+          // Directory nodes are not downloadable; the frontend greys them out accordingly
           importable: pages.filter((p) => !p.isDir).length,
         }),
       );
@@ -116,10 +116,10 @@ export function createWikiSourceRoutes(deps: WikiSourceRouteDeps): Hono {
   });
 
   /**
-   * POST /import —— 拉取 + 写盘（后台语义：此处同步执行完再返回）。
+   * POST /import — fetch + write to disk (background semantics: here it runs synchronously to completion before returning).
    *
    * body: { wiki_id, source_url, provider_id, page_ids? }
-   *   page_ids 省略 → 导入全部非目录节点
+   *   page_ids omitted → import all non-directory nodes
    */
   app.post("/import", async (c) => {
     const a = actor(c);

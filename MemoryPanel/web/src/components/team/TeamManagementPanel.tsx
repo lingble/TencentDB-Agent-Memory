@@ -1,27 +1,27 @@
 /**
- * TeamManagementPanel — 团队管理。
+ * TeamManagementPanel - team management.
  *
- * 承担「Team + 成员 + Agent」管理：
- *   - 顶部是当前 team 概览 + team 级操作入口（仅新建 Team）；
- *     团队级「编辑 / 删除」已统一迁到左上角 TeamSwitcher 下拉框（active team 行右侧），
- *     不再在此面板重复入口。
- *   - 中部是当前 team 的成员管理：按 user_id 添加 / 删除成员
- *   - 下部是当前 team 的 Agent 卡片网格：新建 / 编辑 / 删除
+ * Handles "Team + members + Agent" management:
+ *   - Top: overview of the current team + team-level actions (only Create Team);
+ *     team-level "Edit / Delete" has moved to the TeamSwitcher dropdown in the top-left (right side of the active team row),
+ *     so the entry is no longer duplicated in this panel.
+ *   - Middle: member management for the current team: add / remove members by user_id
+ *   - Bottom: Agent card grid for the current team: create / edit / delete
  *
- * 数据存储（后端持久化）：
- *   - team/members/agent 均走 @/lib/teamApi；
- *   - 写操作成功后统一调用 invalidateBackendCache()，驱动 useTeams/useAgents 重新拉取；
- *   - 后端 schema 还没有的展示字段，序列化进 agent.metadata_json 的 "ui" namespace。
+ * Data storage (backend-persisted):
+ *   - team/members/agent all go through @/lib/teamApi;
+ *   - after a successful write, invalidateBackendCache() is called to make useTeams/useAgents refetch;
+ *   - display fields not yet in the backend schema are serialized into the "ui" namespace of agent.metadata_json.
  *
- * 已知限制（如实反映后端当前能力，不做假 UI）：
- *   - Agent owner 由后端在创建时固定为当前登录用户，暂不支持转交；
- *   - Team 删除为级联操作（连带删除成员/agent/task/资产），仅 owner / admin 可删
- *     （入口在 TeamSwitcher 下拉框）。
+ * Known limitations (faithfully reflecting current backend capabilities, no fake UI):
+ *   - The Agent owner is fixed by the backend to the current logged-in user at creation; transfer is not supported yet;
+ *   - Team deletion is cascading (also deletes members/agent/task/assets); only owner / admin can delete
+ *     (entry is in the TeamSwitcher dropdown).
  *
- * 文件拆分（本文件仅保留组合/编排逻辑，具体实现见同目录下）：
+ * File split (this file only keeps composition/orchestration logic; see the same directory for implementations):
  *   - types.ts / useAgentAssets.ts / shared.tsx / AgentGrid.tsx / MemberSection.tsx /
  *     CreateTeamDialog.tsx / CreateAgentDialog.tsx / AgentEditDialog.tsx
- *   - EditTeamDialog 已迁到 TeamSwitcher 共用（@/layouts/GlobalHeader/TeamSwitcher）
+ *   - EditTeamDialog has moved to be shared with TeamSwitcher (@/layouts/GlobalHeader/TeamSwitcher)
  */
 
 import { useState, useMemo } from 'react';
@@ -70,29 +70,29 @@ export default function TeamManagementPanel({
   instanceId: string;
   isAdmin: boolean;
   /**
-   * 控制本面板渲染哪一块内容（拆 tab 用，功能完全不变）：
-   *   - 'members'：仅成员管理
-   *   - 'agents' ：仅 Agent 管理
-   *   - 'all'    ：两者都渲染（向后兼容旧的单页用法）
+   * Controls which section this panel renders (used for splitting into tabs; functionality unchanged):
+   *   - 'members': member management only
+   *   - 'agents' : Agent management only
+   *   - 'all'    : render both (backward compatible with the old single-page usage)
    */
   section?: 'members' | 'agents' | 'all';
 }) {
   const showMembers = section === 'members' || section === 'all';
   const showAgents = section === 'agents' || section === 'all';
   const { activeTeamId, activeTeam, loading: teamsLoading } = useTeams();
-  // 只取当前 team 的 agent — agent 严格归属 team，不会跨 team 显示
+  // Only take agents of the current team - agents strictly belong to a team and are never shown across teams
   const { agents: allAgents, loading: agentsLoading } = useAgents(activeTeamId);
   const { t } = useTranslation();
-  // Agent 可见性：
-  //   - 全局 admin / 当前 team 的 admin(owner)：可见 team 内全部 agent
-  //   - 普通成员：只能看到自己 owner（创建）的 agent
+  // Agent visibility:
+  //   - global admin / admin (owner) of the current team: can see all agents in the team
+  //   - regular members: can only see agents they own (created)
   const canSeeAllAgents = !!activeTeam && (_isAdmin || isTeamAdmin(activeTeam, currentUser));
   const agents = useMemo(() => {
     if (!activeTeam || canSeeAllAgents) return allAgents;
     return allAgents.filter((a) => a.owner_user_id === currentUser);
   }, [allAgents, activeTeam, canSeeAllAgents, currentUser]);
   const { counts: mountedCounts, countsLoading } = useAgentMountedCounts(activeTeamId, agents);
-  // 通知文案里展示 display_name 而非 user_id（复用全局缓存，幂等无额外请求）
+  // Show display_name instead of user_id in notification text (reuses the global cache; idempotent, no extra requests)
   const resolveUserName = useDisplayNameResolver();
 
   const [showCreateAgent, setShowCreateAgent] = useState(false);
@@ -135,10 +135,10 @@ export default function TeamManagementPanel({
       });
       await agentsApi.update(created.agent_id, { metadata_json: metadataJson });
 
-      // 资产绑定统一走真实挂载接口（不写 metadata_json.ui）。串行执行，任一失败即抛错，
-      // 由外层 catch 统一提示 —— 避免 allSettled 静默导致「显示绑了但实际没绑」。
-      //   - skill → forkToAgent（复制 owner=新 agent 的独立副本）
-      //   - code_graph / wiki → allocate（引用绑定）
+      // Asset binding always goes through the real mount endpoints (does not write metadata_json.ui). Runs serially; any failure throws,
+      // and the outer catch shows a unified message - avoids allSettled silently causing "shown as bound but actually not bound".
+      //   - skill -> forkToAgent (copies an independent replica with owner=new agent)
+      //   - code_graph / wiki -> allocate (reference binding)
       //   - chat_memory → syncChatMemoryBindings
       await syncChatMemoryBindings(activeTeamId, created.agent_id, card.chatMemories);
       for (const skillId of card.skills) {
@@ -186,8 +186,8 @@ export default function TeamManagementPanel({
       await agentsApi.delete(agent.agent_id);
       invalidateBackendCache();
     } catch (err) {
-      // SKILL_DELETE_FAILED：控制台层已删了一部分 skill 但被中断，agent 未 archive
-      // —— 明确告诉用户去 skill 面板处理后重试，别只给一句技术错误码
+      // SKILL_DELETE_FAILED: the console layer deleted some skills but was interrupted; the agent was not archived
+      // - tell the user explicitly to handle it in the skill panel and retry, rather than just showing a technical error code
       const raw = err instanceof Error ? err.message : String(err);
       if (raw.includes('SKILL_DELETE_FAILED')) {
         tea.notify.error(
@@ -215,13 +215,13 @@ export default function TeamManagementPanel({
 
   return (
     <div className="_memory-team-mgmt">
-      {/* === Header: 当前 team 概览 + ops ===
-        切 team 的入口只在左上角全局 TeamSwitcher（App.tsx），这里不再提供
-        平铺 chips 的切换入口，避免跟全局切换器形成两个语义重叠的控件。
-        本卡片只承担三件事：
-          1. 告诉用户「我现在操作的是哪个 team」（name + team_id + 成员数 + 描述）
-          2. 提供 team 级的操作（+ 新建 Team / + 新建 Agent）
-          3. 当尚未选 team 时，给出引导 */}
+      {/* === Header: current team overview + ops ===
+        The only entry for switching teams is the global TeamSwitcher in the top-left (App.tsx); this no longer provides
+        a flat chips switcher, to avoid two semantically overlapping controls alongside the global switcher.
+        This card has only three responsibilities:
+          1. Tell the user "which team am I operating on" (name + team_id + member count + description)
+          2. Provide team-level actions (+ Create Team / + Create Agent)
+          3. Show guidance when no team is selected yet */}
       {teamsLoading ? (
         <div className="_memory-panel-card">
           <div className="_memory-team-header-row">
@@ -288,7 +288,7 @@ export default function TeamManagementPanel({
             />
           )}
 
-          {/* === 默认 Agent 模板（仅全局 admin 可见）=== */}
+          {/* === Default Agent template (visible to global admin only) === */}
           {showAgents && _isAdmin && (
             <DefaultAgentTemplateSection
               teamId={activeTeam.team_id}
@@ -360,14 +360,14 @@ export default function TeamManagementPanel({
 // =================== Empty state ===================
 
 /**
- * 空态引导。
+ * Empty-state guidance.
  *
- * 历史行为：任何已登录用户都能创建自己的第一个 team（team/create 无 admin 限制，
- * 创建者自动成为 owner），所以这里曾不区分 admin / 非 admin。
+ * Historical behavior: any logged-in user could create their own first team (team/create has no admin restriction,
+ * and the creator automatically becomes owner), so admin / non-admin were not distinguished here.
  *
- * 现行行为：前端暂时屏蔽普通用户创建 team 的入口，
- * 仅 admin 可见创建 CTA；普通用户只看到"联系管理员"提示。
- * 后端 team/create 本身仍无角色限制，此屏蔽仅在前端实现。
+ * Current behavior: the frontend temporarily hides the team-creation entry for regular users;
+ * only admins see the create CTA; regular users only see a "contact the administrator" notice.
+ * The backend team/create itself still has no role restriction; this hiding is frontend-only.
  */
 function EmptyTeamState({ onCreateTeam }: { onCreateTeam?: () => void }) {
   const { t } = useTranslation();

@@ -1,17 +1,17 @@
 /**
- * api/skills.ts — Skill 数据面（/api/v1/skill/*）。
+ * api/skills.ts — Skill data plane (/api/v1/skill/*).
  *
- * 与 meta 链路的关键区别：
- *   - skill 有独立存储与主键 skill_id（前缀 skl-），团队内可读、owner agent 可写；
- *   - 身份字段（user_id / team_id / agent_id）放在 body，不放 Header（鉴权 Header
- *     仍是 X-Tdai-Service-Id + X-Tdai-User-Key，与 meta 一致）；
- *   - 写操作（create/update/patch/delete/files.*）需带 agent_id（= owner），
- *     update/patch/delete/files.* 还需 expected_version 乐观锁；
- *   - 分页用嵌套 pagination.{limit,offset}。
+ * Key differences from the meta path:
+ *   - skills have their own storage and primary key skill_id (prefix skl-), readable within the team, writable by the owner agent;
+ *   - identity fields (user_id / team_id / agent_id) go in the body, not the Header (the auth Header
+ *     is still X-Tdai-Service-Id + X-Tdai-User-Key, same as meta);
+ *   - writes (create/update/patch/delete/files.*) require agent_id (= owner),
+ *     and update/patch/delete/files.* also require the expected_version optimistic lock;
+ *   - pagination uses nested pagination.{limit,offset}.
  *
- * 「挂载到 Agent」的语义：让 skill 真正归属某 agent 的唯一机制是 fork —— 复制一份
- * owner_agent_id=目标 agent 的独立副本（见 skillApi.forkToAgent）。acl/grant 只改
- * meta 授权层，对「固定资产」tab 与运行时注入（均按 owner_agent_id）无效。
+ * Semantics of "mount to Agent": the only mechanism that truly makes a skill belong to an agent is fork, which copies
+ * an independent replica with owner_agent_id = target agent (see skillApi.forkToAgent). acl/grant only changes
+ * the meta authorization layer, and has no effect on the "fixed assets" tab or runtime injection (both keyed on owner_agent_id).
  */
 import { getPanelSession } from '../panelSession';
 import { request, getCurrentUser, ApiError, META_PAGE_SIZE } from './base';
@@ -66,7 +66,7 @@ export interface SkillFileContent {
 
 const SKILL_PREFIX = '/api/v1/skill';
 
-/** skill 数据面调用：注入双 Header，POST body，解析信封（code!=0 抛 ApiError）。 */
+/** Skill data-plane call: inject both Headers, POST body, parse the envelope (throws ApiError when code!=0). */
 async function skillCall<T>(
   action: string,
   body: Record<string, unknown>,
@@ -102,7 +102,7 @@ async function skillPost<T>(action: string, body: Record<string, unknown> = {}):
 }
 
 export const skillApi = {
-  /** 列出 team 下的 head skill（分页拉全量；可选按 owner agent / 名称前缀 / 状态过滤） */
+  /** List head skills under a team (pages through everything; optional filters by owner agent / name prefix / status) */
   list: async (
     teamId: string,
     opts?: { ownerAgentId?: string; namePrefix?: string; status?: Array<'active' | 'archived'> }
@@ -128,11 +128,11 @@ export const skillApi = {
     return items;
   },
 
-  /** 列出某个 agent 拥有（owner）的 skill */
+  /** List skills owned by an agent */
   listByAgent: (teamId: string, agentId: string): Promise<SkillSummary[]> =>
     skillApi.list(teamId, { ownerAgentId: agentId }),
 
-  /** 获取 skill 详情（含 SKILL.md 正文 + 资源清单） */
+  /** Get skill details (including SKILL.md body + resource manifest) */
   get: async (teamId: string, skillId: string): Promise<SkillDetail> => {
     const me = await getCurrentUser();
     return skillPost<SkillDetail>('get', {
@@ -144,7 +144,7 @@ export const skillApi = {
     });
   },
 
-  /** 读取单个资源文件内容 */
+  /** Read a single resource file's content */
   filesRead: async (teamId: string, skillId: string, path: string): Promise<SkillFileContent> => {
     const me = await getCurrentUser();
     return skillPost<SkillFileContent>('files/read', {
@@ -155,7 +155,7 @@ export const skillApi = {
     });
   },
 
-  /** 创建 skill（agentId 将成为 owner_agent_id） */
+  /** Create a skill (agentId becomes owner_agent_id) */
   create: async (
     teamId: string,
     agentId: string,
@@ -173,7 +173,7 @@ export const skillApi = {
     });
   },
 
-  /** 软删除（归档）；需 owner agent_id + expected_version 乐观锁 */
+  /** Soft delete (archive); requires owner agent_id + expected_version optimistic lock */
   delete: async (
     teamId: string,
     agentId: string,
@@ -190,7 +190,7 @@ export const skillApi = {
     });
   },
 
-  /** 全量更新 SKILL.md 内容；需 owner agent_id + expected_version */
+  /** Fully update SKILL.md content; requires owner agent_id + expected_version */
   update: async (
     teamId: string,
     agentId: string,
@@ -209,7 +209,7 @@ export const skillApi = {
     });
   },
 
-  /** 团队范围搜索 skill */
+  /** Team-scoped skill search */
   search: async (
     teamId: string,
     query: string,
@@ -227,21 +227,21 @@ export const skillApi = {
   },
 
   /**
-   * Fork skill 给 Agent —— 复制一份独立副本，`owner_agent_id` = 目标 agent。
+   * Fork a skill to an Agent: copy an independent replica with `owner_agent_id` = target agent.
    *
-   * 为什么用 fork 而不是 meta 授权（acl/grant）：
-   *   - 「固定资产」tab（SkillsPanel）按 `owner_agent_id` 过滤展示；
-   *   - agent 运行时注入 `<available_skills>`（/skill/listing）同样按
-   *     `owner_agent_id` 过滤。
-   *   两处读取都认 `owner_agent_id`，而 acl/grant 只改 meta 授权层，对它们均无效。
-   *   因此让 skill 真正归属某 agent 的唯一机制就是复制一份 owner=该 agent 的副本。
+   * Why fork instead of meta authorization (acl/grant):
+   *   - the "fixed assets" tab (SkillsPanel) filters by `owner_agent_id`;
+   *   - agent runtime injection of `<available_skills>` (/skill/listing) also filters by
+   *     `owner_agent_id`.
+   *   Both reads key on `owner_agent_id`, and acl/grant only changes the meta authorization layer, which affects neither.
+   *   So the only way to make a skill truly belong to an agent is to copy a replica with owner = that agent.
    *
-   * 命名：副本沿用**源 skill 原名**，不加后缀。skill 唯一约束是
-   * (team_id, owner_agent_id, name)：同一 team 允许多个同名副本（分属不同 agent），
-   * 但同一 agent 下重名会被后端拒绝（42201）——此时向上抛错，由调用方提示。
+   * Naming: the replica keeps the **source skill's original name**, with no suffix. The skill uniqueness constraint is
+   * (team_id, owner_agent_id, name): a team may hold multiple same-named replicas (under different agents),
+   * but a duplicate name under the same agent is rejected by the backend (42201); the error is rethrown for the caller to report.
    *
-   * 实现：getSkill（源正文 + 清单）→ filesRead（逐个资源，单个失败跳过）→
-   *       create（name=原名，agent_id=目标 agent 即 owner）。
+   * Implementation: getSkill (source body + manifest) → filesRead (each resource, skipping individual failures) →
+   *       create (name = original name, agent_id = target agent, i.e. owner).
    */
   forkToAgent: async (
     teamId: string,
@@ -261,14 +261,14 @@ export const skillApi = {
           is_executable: entry.is_executable || undefined,
         });
       } catch {
-        /* 单个资源读取失败则跳过，不阻断 fork 主流程 */
+        /* Skip a resource whose read fails, without blocking the main fork flow */
       }
     }
     return skillApi.create(teamId, targetAgentId, {
       name: detail.name,
       content: detail.content,
       resources: resources.length ? resources : undefined,
-      // 血缘：记录 fork 自哪个源 skill，供从副本反查源、避免重复 fork。
+      // Lineage: record which source skill this was forked from, so the source can be traced from the replica and duplicate forks avoided.
       metadata: { forked_from: { skill_id: sourceSkillId, name: detail.name } },
     });
   },

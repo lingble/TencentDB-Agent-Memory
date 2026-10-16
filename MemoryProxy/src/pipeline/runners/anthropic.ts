@@ -273,8 +273,14 @@ export function flattenAnthropicMessagesForOpik(
   return result;
 }
 
-/** Extract Anthropic API key from request headers (x-api-key or Authorization Bearer). */
+/** Extract the caller's sk-mem key (x-tdai-user-key, then x-api-key, then Authorization Bearer). */
 function extractApiKey(c: Context): string {
+  // x-tdai-user-key wins so clients whose Authorization carries their own
+  // upstream credential (e.g. Claude subscription OAuth) can still identify
+  // to the kernel. The header is stripped before forwarding upstream.
+  const tdaiUserKey = c.req.header("x-tdai-user-key")?.trim();
+  if (tdaiUserKey) return tdaiUserKey;
+
   const xApiKey = c.req.header("x-api-key");
   if (xApiKey) return xApiKey;
 

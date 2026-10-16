@@ -62,7 +62,7 @@ python v2-to-v3-migrate.py /path/to/memory-tdai --db-only
 ## Examples
 
 ```bash
-# Hermes
+# Standalone Gateway
 python scripts/migrate-v2-to-v3/v2-to-v3-migrate.py ~/.memory-tencentdb/memory-tdai --dry-run
 python scripts/migrate-v2-to-v3/v2-to-v3-migrate.py ~/.memory-tencentdb/memory-tdai
 

@@ -1,16 +1,16 @@
 /**
- * GitSourceFetcher — 基于 simple-git 的源码拉取实现。
+ * GitSourceFetcher — source fetching implementation based on simple-git.
  *
- * simple-git 内部用 child_process.spawn + args 数组，不走 shell，从原理上消除 shell 注入。
+ * simple-git uses child_process.spawn with an args array internally, never a shell, eliminating shell injection by design.
  *
- * 安全防护（002 §4-5）：
- *   - R1 git hooks：clone/fetch 本就不拉取远端 .git/hooks（hooks 为本地态），故不额外
- *     配置 core.hooksPath（加固版 git 会拒绝该配置，需 allowUnsafeHooksPath）。
- *   - R2 SSRF：HTTPS 与 SSH 均做内网/环回地址黑名单（对齐项目 security_rules）。
- *   - Bug 修复（方案 A）：增量 sync 的 git clean 排除 .codegraph/，避免删掉 codegraph 索引库。
+ * Security measures (002 §4-5):
+ *   - R1 git hooks: clone/fetch never pull remote .git/hooks (hooks are local state), so we do not additionally
+ *     set core.hooksPath (hardened git rejects that config without allowUnsafeHooksPath).
+ *   - R2 SSRF: private/loopback address blocklist for both HTTPS and SSH (aligned with project security_rules).
+ *   - Bug fix (option A): git clean during incremental sync excludes .codegraph/ to avoid deleting the codegraph index.
  *
- * SSH 支持（2026-10-10）：协议白名单从 https-only 放开到 https + ssh(`git@` / `ssh://`)；
- * 私钥经 `GIT_SSH_COMMAND` 注入，仅活在子进程 env 里，不落盘、不进日志。
+ * SSH support (2026-10-10): protocol allowlist widened from https-only to https + ssh (`git@` / `ssh://`);
+ * the private key is injected via `GIT_SSH_COMMAND`, lives only in the child process env, never on disk or in logs.
  */
 
 import simpleGit, { CleanOptions, ResetMode, type SimpleGit } from "simple-git";
@@ -26,11 +26,11 @@ import { isSshUrl, parseSshHost, buildSshCommand } from "./ssh-options.js";
 const UNSAFE_SSH_COMMAND = { allowUnsafeSshCommand: true } as const;
 
 /**
- * 识别 git 认证 / 权限类错误（simple-git 无 TTY，git 交互式询问 Username/Password
- * 会变成 `could not read Username for '...': No such device or address`）。
+ * Detect git auth / permission errors (simple-git has no TTY, so git's interactive Username/Password prompt
+ * becomes `could not read Username for '...': No such device or address`).
  *
- * 这类错误对用户极具误导性：本质是仓库需要认证（401/403），却被 git 表述成
- * 「无法读取用户名」。用这里集中识别，再在 worker 层按是否带凭据转成人类可读提示。
+ * These errors are very misleading to users: the repo actually requires auth (401/403), but git phrases it as
+ * "could not read username". Detect them centrally here; the worker layer then turns them into human-readable hints depending on whether credentials were supplied.
  */
 export function isGitAuthError(raw: string): boolean {
   const msg = raw.toLowerCase();
@@ -52,13 +52,13 @@ export function isGitAuthError(raw: string): boolean {
 }
 
 /**
- * 从 git 原文里挑出**真正的失败原因**。
+ * Pick the **actual failure reason** out of raw git output.
  *
- * 不能只取第一行：git 输出以 `Cloning into '<path>'...` 开头，
- * 那是进度信息不是错误。只取首行会让所有失败都显示成"Cloning into ..."，
- * 真实原因被吞掉（曾导致分支不存在被误报成 SSH 认证失败）。
+ * Can't just take the first line: git output starts with `Cloning into '<path>'...`,
+ * which is progress info, not an error. Taking only the first line made every failure show as "Cloning into ...",
+ * swallowing the real cause (this once caused a missing branch to be misreported as SSH auth failure).
  *
- * 取法：优先最后一条 `fatal:` / `error:` 行；没有就退回最后一条非空行。
+ * Approach: prefer the last `fatal:` / `error:` line; otherwise fall back to the last non-empty line.
  */
 function pickGitErrorLine(raw: string): string {
   const lines = raw
@@ -69,7 +69,7 @@ function pickGitErrorLine(raw: string): string {
   return (fatal.length > 0 ? fatal[fatal.length - 1] : lines[lines.length - 1]) ?? raw.trim();
 }
 
-/** 把 git 认证错误转成面向用户的提示。needsCredential = clone 时是否已注入凭据。 */
+/** Convert a git auth error into a user-facing hint. needsCredential = whether credentials were injected at clone time. */
 export function explainGitAuthError(raw: string, needsCredential: boolean): string {
   const brief = pickGitErrorLine(raw);
   // SSH 认证失败（公钥未配置 / 未被授权）另行提示，引导用户去配公钥。
@@ -81,41 +81,41 @@ export function explainGitAuthError(raw: string, needsCredential: boolean): stri
   }
   if (needsCredential) {
     return (
-      `访问令牌无效或已过期，无法拉取仓库（git: ${brief}）。` +
-      `请在仓库详情里重新填写访问令牌。`
+      `Access token is invalid or expired; cannot fetch the repository (git: ${brief}). ` +
+      `Please re-enter the access token in the repository details.`
     );
   }
   return (
-    `该仓库需要身份认证，无法以「公开」方式克隆（git: ${brief}）。` +
-    `请删除后重新注册，来源选择对应的代码平台并填写访问令牌。`
+    `This repository requires authentication and cannot be cloned as "public" (git: ${brief}). ` +
+    `Please delete it and register again, selecting the corresponding code platform as the source and entering an access token.`
   );
 }
 
 /**
- * 是否为「远端没有该分支」。
+ * Whether the error is "remote has no such branch".
  *
- * git 的原文（`Could not find remote branch main to clone` /
- * `Remote branch main not found in upstream origin`）不含任何可行动信息，
- * 用户看到只会以为仓库坏了，实际改个分支名就好。
+ * git's raw text (`Could not find remote branch main to clone` /
+ * `Remote branch main not found in upstream origin`) carries nothing actionable;
+ * users assume the repo is broken when they just need to change the branch name.
  */
 export function isRemoteBranchMissingError(raw: string): boolean {
   const msg = raw.toLowerCase();
   const patterns = [
     "could not find remote branch",
-    "remote branch", // 与下面的 not found 配合判定
+    "remote branch", // combined with "not found" below
     "couldn't find remote ref",
     "could not find remote ref",
   ];
   const matched = patterns.filter((p) => msg.includes(p));
   if (matched.length === 0) return false;
-  // "remote branch" 单独出现不足以判定（正常信息里也有），需同时出现 not found。
+  // "remote branch" alone isn't enough (it appears in normal output too); require "not found" as well.
   if (matched.length === 1 && matched[0] === "remote branch") {
     return msg.includes("not found");
   }
   return true;
 }
 
-/** 是否为 SSH 认证类错误（区别于 HTTPS 的令牌失效）。 */
+/** Whether the error is an SSH auth error (as opposed to an expired HTTPS token). */
 export function isSshAuthError(raw: string): boolean {
   const msg = raw.toLowerCase();
   return (
@@ -126,20 +126,20 @@ export function isSshAuthError(raw: string): boolean {
 }
 
 /**
- * 内网 / 环回 / link-local 地址黑名单（标准网段）：
- *   - 10. / 172.16-31. / 192.168.  → RFC1918 私有网段
- *   - 169.254.                     → link-local（含云元数据 169.254.169.254）
- *   - 127. / 0. / localhost / ::1  → 环回
+ * Private / loopback / link-local address blocklist (standard ranges):
+ *   - 10. / 172.16-31. / 192.168.  → RFC1918 private ranges
+ *   - 169.254.                     → link-local (including cloud metadata 169.254.169.254)
+ *   - 127. / 0. / localhost / ::1  → loopback
  *   - fe80:                        → IPv6 link-local
  *
- * 该黑名单可通过环境变量 KNOWLEDGE_SSRF_CHECK=off 关闭（见 GitSourceFetcher 构造）。
+ * The blocklist can be disabled via the env var KNOWLEDGE_SSRF_CHECK=off (see GitSourceFetcher constructor).
  */
 const PRIVATE_ADDR_RE =
   /^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|169\.254\.|127\.|0\.|localhost$|::1$|fe80:)/i;
 
 /**
- * 读取 SSRF 私网黑名单开关。默认开启；
- * 当 KNOWLEDGE_SSRF_CHECK 为 off/false/0/no（大小写不敏感）时关闭。
+ * Read the SSRF private-network blocklist switch. Enabled by default;
+ * disabled when KNOWLEDGE_SSRF_CHECK is off/false/0/no (case-insensitive).
  */
 function ssrfCheckEnabledFromEnv(): boolean {
   const raw = process.env.KNOWLEDGE_SSRF_CHECK;
@@ -150,8 +150,8 @@ function ssrfCheckEnabledFromEnv(): boolean {
 
 export interface GitSourceFetcherOptions {
   /**
-   * 是否启用 SSRF 私网 / 环回地址黑名单校验。
-   * 默认读环境变量 KNOWLEDGE_SSRF_CHECK（默认开启）；显式传入时优先于环境变量。
+   * Whether to enable the SSRF private / loopback address blocklist check.
+   * Defaults to the env var KNOWLEDGE_SSRF_CHECK (on by default); an explicit value takes precedence over the env var.
    */
   ssrfCheck?: boolean;
 }
@@ -159,7 +159,7 @@ export interface GitSourceFetcherOptions {
 export class GitSourceFetcher implements ISourceFetcher {
   readonly supportedType: SourceType = "git";
 
-  /** SSRF 私网黑名单校验开关（协议白名单始终生效，不受此开关影响）。 */
+  /** SSRF private-network blocklist switch (the protocol allowlist always applies, unaffected by this switch). */
   private readonly ssrfCheck: boolean;
 
   constructor(opts?: GitSourceFetcherOptions) {
@@ -167,8 +167,8 @@ export class GitSourceFetcher implements ISourceFetcher {
   }
 
   validate(sourceUrl: string): void {
-    // 协议白名单：HTTPS（公开 / 私有仓 URL 注入令牌）+ SSH（GIT_SSH_COMMAND 注入私钥）。
-    // 其它协议（file://、ftp://、git:// 明文协议等）一律拒绝。
+    // Protocol allowlist: HTTPS (public / private repo with token injected in URL) + SSH (private key via GIT_SSH_COMMAND).
+    // All other protocols (file://, ftp://, plaintext git://, etc.) are rejected.
     if (!this.isAllowedProtocol(sourceUrl)) {
       throw new Error(
         "repo_url must use https:// , git@host:path or ssh:// scheme",
@@ -178,7 +178,7 @@ export class GitSourceFetcher implements ISourceFetcher {
     if (!host) {
       throw new Error(`invalid repo_url: cannot parse host from ${sourceUrl}`);
     }
-    // R2: SSRF 防护 —— 禁止指向内网 / 环回地址（可经 KNOWLEDGE_SSRF_CHECK=off 关闭）。
+    // R2: SSRF protection — disallow private / loopback addresses (can be disabled via KNOWLEDGE_SSRF_CHECK=off).
     if (this.ssrfCheck && this.isPrivateAddress(host)) {
       throw new Error(`repo_url must not point to private/loopback address: ${host}`);
     }
@@ -186,19 +186,19 @@ export class GitSourceFetcher implements ISourceFetcher {
 
   async fetch(sourceUrl: string, branch: string, localPath: string, opts?: GitFetchOptions): Promise<FetchResult> {
     this.validate(sourceUrl);
-    // 浅克隆单分支。注：git clone/fetch 不会拉取远端的 .git/hooks（hooks 是本地态），
-    // 所以正常仓库 clone 出来不带可执行钩子；此处不再配置 core.hooksPath
-    // （加固版 git 会拒绝该配置：需 allowUnsafeHooksPath）。
-    // clone 到尚未存在的目标目录，故不设 baseDir（与改造前一致：simpleGit() 无 cwd）。
+    // Shallow single-branch clone. Note: git clone/fetch never pull remote .git/hooks (hooks are local state),
+    // so a normally cloned repo has no executable hooks; core.hooksPath is no longer set here
+    // (hardened git rejects that config: requires allowUnsafeHooksPath).
+    // Clone into a not-yet-existing target dir, so no baseDir is set (same as before: simpleGit() with no cwd).
     try {
       await this.gitFor(sourceUrl, undefined, opts).clone(sourceUrl, localPath, {
         "--depth": 1,
         "--branch": branch,
       });
     } catch (err) {
-      // 「远端没有这个分支」是最常见的注册失败原因（前端默认填 main，
-      // 而不少仓库默认分支仍是 master）。git 的原文没有可行动信息，
-      // 这里列一下远端实际分支，用户改一个名字就能过。
+      // "Remote has no such branch" is the most common registration failure (the frontend defaults to main,
+      // while many repos still default to master). git's raw text isn't actionable,
+      // so list the actual remote branches here; the user can fix it by changing one name.
       throw await this.explainBranchError(err, sourceUrl, branch, opts);
     }
     const version = await this.headCommit(localPath);
@@ -248,14 +248,14 @@ export class GitSourceFetcher implements ISourceFetcher {
     const git = this.gitFor(sourceUrl, localPath, opts); // baseDir = 已存在的仓库目录
     await git.fetch("origin", branch, { "--depth": 1 });
     await git.reset(ResetMode.HARD, [`origin/${branch}`]);
-    // Bug 修复（方案 A）：clean 排除 .codegraph/，否则会删掉 codegraph 的索引库，
-    // 导致增量 sync 永远失败、每次回退到全量 clone。
+    // Bug fix (option A): clean excludes .codegraph/, otherwise it deletes the codegraph index,
+    // causing incremental sync to always fail and fall back to a full clone every time.
     await git.clean(CleanOptions.FORCE + CleanOptions.RECURSIVE, ["-e", ".codegraph"]);
     const version = await this.headCommit(localPath);
     return { localPath, version, sourceType: "git" };
   }
 
-  // ── 内部 helper ──
+  // ── Internal helpers ──
 
   /**
    * 构造 simple-git 实例，必要时带上 `GIT_SSH_COMMAND`。

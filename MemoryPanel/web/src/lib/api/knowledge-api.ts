@@ -1,14 +1,14 @@
 /**
- * Knowledge Panel API 客户端（v1.0 冻结）
+ * Knowledge Panel API client (v1.0 frozen)
  *
- * 对接文档：docs/api/knowledge-panel-api.md
- * 前缀：`/api/v1/knowledge`，全部 POST，统一信封 { code, message, request_id, data }
- * 鉴权：`X-Tdai-Service-Id` + `X-Tdai-User-Key`（与 meta API 一致）
+ * Reference doc: docs/api/knowledge-panel-api.md
+ * Prefix: `/api/v1/knowledge`, all POST, unified envelope { code, message, request_id, data }
+ * Auth: `X-Tdai-Service-Id` + `X-Tdai-User-Key` (same as the meta API)
  *
- * 本期接入（§2.0 最小端点集）：
+ * Integrated in this phase (§2.0 minimal endpoint set):
  *   Wiki: list / create / ingest / get / delete / graph / page/ls / page/read /
- *         search / raw/ls / raw/read / raw/write（12 个）
- *   Code-Graph: list / create / sync / delete / search / explore（6 个）
+ *         search / raw/ls / raw/read / raw/write (12 endpoints)
+ *   Code-Graph: list / create / sync / delete / search / explore (6 endpoints)
  */
 
 import { getPanelSession } from '../panelSession';
@@ -67,17 +67,17 @@ async function panelPost<T>(path: string, body?: unknown): Promise<T> {
   return env.data;
 }
 
-// ========================= Types（对接 Panel API） =========================
+// ========================= Types (Panel API) =========================
 
 export interface ImportAndIngestResult {
   ok: boolean;
   wiki_id: string;
-  /** 成功时返回 */
+  /** Returned on success */
   ingest_task_id?: string;
   status?: string;
-  /** true = 取消了旧任务并排队了新任务 */
+  /** true = cancelled the old task and queued a new one */
   queued?: boolean;
-  /** 失败时返回 */
+  /** Returned on failure */
   failed_at?: 'write' | 'ingest';
   error_code?: string;
   error_message?: string;
@@ -88,9 +88,9 @@ export interface WikiDetail {
   wiki_id: string;
   team_id: string;
   name: string;
-  /** null=手工上传；'iwiki' 等=外部来源（详情页据此切换"添加文件"或"从外部拉取"）。 */
+  /** null = manual upload; 'iwiki' etc. = external source (the detail page uses this to switch between "Add files" and "Pull from external"). */
   source_type: string | null;
-  /** 外部来源 URL；仅 source_type 非 null 时有值。 */
+  /** External source URL; only set when source_type is non-null. */
   source_url: string | null;
   service_url: string | null;
   summary: string | null;
@@ -124,9 +124,9 @@ export interface CodeGraphDetail {
   updated_at: string;
 }
 
-// ---- 兼容旧类型（平滑过渡） ----
+// ---- Legacy-compatible types (smooth transition) ----
 
-/** @deprecated 用 WikiDetail 替代 */
+/** @deprecated Use WikiDetail instead */
 export interface WikiSource {
   wiki_id?: string;
   name: string;
@@ -137,8 +137,8 @@ export interface WikiSource {
   agent_id?: string;
 }
 
-// ── 外部来源（工蜂 / GitHub / GitLab）──
-// 来源清单与凭据存储的真相源在 KS；前端只拿元数据，永不接收明文 token。
+// ── External sources (Gongfeng / GitHub / GitLab) ──
+// The source of truth for the source list and credential storage is KS; the frontend only gets metadata and never receives plaintext tokens.
 
 export interface SourceProviderFormField {
   name: string;
@@ -149,25 +149,25 @@ export interface SourceProviderFormField {
 export interface SourceProviderMeta {
   id: string;
   /**
-   * 认证方式类型（bearer / basic / ssh-key）。
-   * `ssh-key` 时 form_fields 为空数组 —— 前端据此不渲染任何输入框，
-   * 改为走「获取并配置 SSH 公钥」流程。
+   * Auth method type (bearer / basic / ssh-key).
+   * For `ssh-key`, form_fields is an empty array — the frontend renders no input fields
+   * and switches to the "get and configure SSH public key" flow instead.
    */
   auth_method: 'bearer' | 'basic' | 'ssh-key';
-  /** 表单字段清单：前端按此动态渲染。 */
+  /** Form field list: the frontend renders dynamically from this. */
   form_fields: readonly SourceProviderFormField[];
   token_doc_url?: string | null;
 }
 
-/** SSH 密钥信息（服务端只回公钥，私钥永不出服务端）。 */
+/** SSH key info (the server only returns the public key; the private key never leaves the server). */
 export interface SshKeyInfo {
   public_key: string;
-  /** true = 本次新生成；false = 复用既有密钥。 */
+  /** true = newly generated this time; false = reused an existing key. */
   created: boolean;
   username: string;
 }
 
-/** wiki 远端节点（扁平，含目录节点）。 */
+/** Remote wiki node (flat, including directory nodes). */
 export interface WikiRemotePageRef {
   externalId: string;
   title: string;
@@ -186,13 +186,13 @@ export interface WikiResolvedRoot {
 }
 
 /**
- * 遍历策略：决定从导入根出发如何发现文档。
- * - tree：走平台层级接口展开子文档（结构完整，大空间较慢）
- * - links：解析正文里的超链接发现文档（更快，只覆盖被链接到的页面）
+ * Crawl strategy: decides how documents are discovered starting from the import root.
+ * - tree: expands child docs via the platform's hierarchy API (complete structure, slower for large spaces)
+ * - links: discovers docs by parsing hyperlinks in the body (faster, only covers linked pages)
  */
 export interface WikiCrawlOptions {
   mode?: 'tree' | 'links';
-  /** 最大遍历深度，仅 links 有意义；1 = 只取入口页直接链接到的文档。 */
+  /** Max crawl depth, only meaningful for links; 1 = only docs directly linked from the entry page. */
   maxDepth?: number;
 }
 
@@ -220,7 +220,7 @@ export interface SourceCredentialStatus {
 
 export type SourceResourceType = SourceCredentialStatus['resource_type'];
 
-/** @deprecated 用 CodeGraphDetail 替代 */
+/** @deprecated Use CodeGraphDetail instead */
 export interface CodeSource {
   code_graph_id?: string;
   repo: string;
@@ -238,8 +238,8 @@ export interface CodeSource {
 }
 
 /**
- * 导入知识库后触发异步 ingest。旧代码期望 SSE 进度流 => 新 Panel 无 SSE，
- * 前端转为：触发 ingest → 轮询 get 看 status。回调签名仅为兼容旧 UI 的进度条展示。
+ * Triggers async ingest after importing into the knowledge base. Old code expected an SSE progress stream => the new Panel has no SSE,
+ * so the frontend does: trigger ingest → poll get for status. The callback signature only exists for the old UI's progress bar.
  */
 export interface IngestProgressEvent {
   type: 'file_start' | 'file_done' | 'file_error' | 'batch_done';
@@ -257,14 +257,14 @@ export interface IngestStreamCallbacks {
   onError?: (error: string) => void;
 }
 
-// 图谱类型（与旧版兼容）
+// Graph types (compatible with the old version)
 export interface GraphNode { id: string; label: string; type: string; path: string; linkCount: number; community: number; }
 export interface GraphEdge { source: string; target: string; weight: number; }
 export interface GraphData { nodes: GraphNode[]; edges: GraphEdge[]; communities?: { id: number; nodeCount: number; topNodes: string[] }[]; }
 
 export interface WikiPage { path: string; title: string; type: string; tags?: string[]; created?: string; updated?: string; }
 
-/** meta + KS join 后的列表项（team-assets） */
+/** List item after meta + KS join (team-assets) */
 export interface KnowledgeAssetItem {
   knowledge_id: string;
   asset_type: string;
@@ -281,9 +281,9 @@ export interface KnowledgeAssetItem {
   summary?: string | null;
   page_count?: number | null;
   last_sync_at?: string | null;
-  /** wiki 专用：null=手工上传，'iwiki' 等=外部来源。 */
+  /** Wiki only: null = manual upload, 'iwiki' etc. = external source. */
   source_type?: string | null;
-  /** wiki 专用：外部来源 URL。 */
+  /** Wiki only: external source URL. */
   source_url?: string | null;
   repo_name?: string;
   repo_url?: string;
@@ -397,16 +397,16 @@ export function wikiProgressPercent(status: WikiDetail['status'], internalStatus
 export const knowledgeApi = {
   health: () => panelPost<Record<string, unknown>>('/health').catch(() => ({ ok: true })),
 
-  /** 读取某个 Agent 已绑定的全部 Knowledge 固定资产（wiki + code_graph）。 */
+  /** Read all Knowledge fixed assets (wiki + code_graph) bound to an Agent. */
   agentFixed: (agentId: string): Promise<KnowledgeFixedItem[]> => listAgentFixedKnowledge(agentId),
 
   // ---- Wiki ----
 
   wiki: {
     /**
-     * 创建 wiki。返回 WikiDetail（含 wiki_id）。
-     * 外部来源（iWiki 等）须**同时**传 sourceType + sourceUrl；
-     * source_type 会落库，详情页据此决定「上传文件」还是「从外部拉取」。
+     * Create a wiki. Returns WikiDetail (including wiki_id).
+     * External sources (iWiki etc.) must pass sourceType + sourceUrl **together**;
+     * source_type is persisted, and the detail page uses it to decide between "Upload files" and "Pull from external".
      */
     create: (
       teamId: string,
@@ -420,38 +420,38 @@ export const knowledgeApi = {
         ...(sourceUrl && sourceType ? { source_url: sourceUrl, source_type: sourceType } : {}),
       }),
 
-    /** @deprecated 使用 teamAssets */
+    /** @deprecated Use teamAssets */
     list: async (teamId: string): Promise<WikiDetail[]> => {
       const d = await panelPost<{ items: WikiDetail[]; total: number }>('/wiki/list', { team_id: teamId });
       return d.items ?? [];
     },
 
-    /** 团队 Wiki 池（meta list-accessible visibility=team + KS join） */
+    /** Team Wiki pool (meta list-accessible visibility=team + KS join) */
     teamAssets: async (teamId: string): Promise<WikiDetail[]> => {
       const items = await listTeamAssets('/wiki/team-assets', teamId);
       return items.map(assetItemToWiki);
     },
 
-    /** 获取详情（含 status，用于 ingest 后轮询） */
+    /** Get details (including status, for polling after ingest) */
     get: (wikiId: string): Promise<WikiDetail> =>
       panelPost('/wiki/get', { wiki_id: wikiId }),
 
-    /** 触发异步 ingest（返回后轮询 get 看 status） */
+    /** Trigger async ingest (poll get for status afterwards) */
     ingest: (wikiId: string): Promise<void> =>
       panelPost('/wiki/ingest', { wiki_id: wikiId }),
 
-    /** 触发 ingest 后轮询 wiki/get，用真实 status/internal_status 驱动进度展示。 */
+    /** After triggering ingest, poll wiki/get and drive the progress display with the real status/internal_status. */
     ingestWithPolling: async (wikiId: string, callbacks: IngestStreamCallbacks, _teamId: string): Promise<void> => {
       try {
         callbacks.onProgress?.({ type: 'file_start', detail: i18n.t('knowledgeApi.ingest.triggering'), done: 0, total: 100, ts: Date.now() });
         try {
           await knowledgeApi.wiki.ingest(wikiId);
         } catch (err: unknown) {
-          // 已经在 pending/processing 时，KS 会返回 409 busy；前端继续轮询现有任务。
+          // If already pending/processing, KS returns 409 busy; the frontend keeps polling the existing task.
           if (!(err instanceof KnowledgeApiError && err.code === 409)) throw err;
         }
 
-        const maxAttempts = 300; // 最多约 10 分钟；每次都实际查询 wiki/get。
+        const maxAttempts = 300; // About 10 minutes max; each attempt actually queries wiki/get.
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
           await new Promise(r => setTimeout(r, attempt === 1 ? 800 : 2000));
           const detail = await knowledgeApi.wiki.get(wikiId);
@@ -484,12 +484,12 @@ export const knowledgeApi = {
     },
 
     /**
-     * 导入并抽取（设计 2026-09-21 合并入口）。
+     * Import and extract (merged entry point, design 2026-09-21).
      *
-     * 一次请求完成：写 raw（可选）→ 触发 ingest。KS 侧用 onBusy:'replace'
-     * 原子完成"取消旧任务 + 排队新任务"，前端无需感知、无需重试。
+     * Done in one request: write raw (optional) → trigger ingest. KS uses onBusy:'replace'
+     * to atomically "cancel the old task + queue a new one"; the frontend needn't be aware or retry.
      *
-     * mode 与 Modal 三 tab 对应：files | markdown | external | reingest。
+     * mode maps to the Modal's three tabs: files | markdown | external | reingest.
      */
     importAndIngest: (params: {
       wiki_id: string;
@@ -502,21 +502,21 @@ export const knowledgeApi = {
     }): Promise<ImportAndIngestResult> =>
       panelPost('/wiki/import-and-ingest', params),
 
-    /** 删除 */
+    /** Delete */
     delete: (wikiId: string): Promise<void> =>
       panelPost('/wiki/delete', { wiki_ids: [wikiId] }),
 
-    /** 图谱 */
+    /** Graph */
     graph: (wikiId: string): Promise<GraphData> =>
       panelPost('/wiki/graph', { wiki_id: wikiId }),
 
-    /** 页面列表 */
+    /** Page list */
     pages: async (wikiId: string): Promise<WikiPage[]> => {
       const d = await panelPost<{ items: WikiPage[] }>('/wiki/page/ls', { wiki_id: wikiId });
       return d.items ?? [];
     },
 
-    /** 读页面（含 raw/sources/...） */
+    /** Read a page (including raw/sources/...) */
     read: async (wikiId: string, path: string): Promise<{ content: string }> => {
       const d = await panelPost<{ items: Array<{ ref: string; content?: string; not_found?: boolean }> }>(
         '/wiki/page/read', { wiki_id: wikiId, refs: [path] }
@@ -526,17 +526,17 @@ export const knowledgeApi = {
       return { content: item?.content ?? '' };
     },
 
-    /** 删除 processed wiki 页面 */
+    /** Delete a processed wiki page */
     pageDelete: (wikiId: string, refs: string[]): Promise<void> =>
       panelPost('/wiki/page/rm', { wiki_id: wikiId, refs }),
 
-    /** 全文搜索 */
+    /** Full-text search */
     search: (wikiId: string, query: string, limit?: number): Promise<{
       results: Array<{ path: string; title: string; snippet: string; score: number; type: string }>;
     }> =>
       panelPost('/wiki/search', { wiki_id: wikiId, query, limit: limit ?? 20 }),
 
-    /** raw 文件列表 */
+    /** Raw file list */
     rawList: async (wikiId: string): Promise<{ files: Array<{ filename: string; size: number }> }> => {
       const d = await panelPost<{ items: Array<{ filename: string; size: number }> }>(
         '/wiki/raw/ls', { wiki_id: wikiId }
@@ -544,15 +544,15 @@ export const knowledgeApi = {
       return { files: d.items ?? [] };
     },
 
-    /** raw 文件读取 */
+    /** Read a raw file */
     rawRead: (wikiId: string, filenames: string[]): Promise<{ items: Array<{ filename: string; content?: string; not_found?: boolean }> }> =>
       panelPost('/wiki/raw/read', { wiki_id: wikiId, filenames }),
 
-    /** 删除 raw 原始文档 */
+    /** Delete a raw source document */
     rawDelete: (wikiId: string, filenames: string[]): Promise<void> =>
       panelPost('/wiki/raw/rm', { wiki_id: wikiId, filenames }),
 
-    /** raw 文件上传 */
+    /** Upload a raw file */
     upload: (opts: { teamId: string; wikiId: string; filename: string; content: string }): Promise<void> =>
       panelPost('/wiki/raw/write', { team_id: opts.teamId, wiki_id: opts.wikiId, files: [{ filename: opts.filename, content: opts.content }] }),
 
@@ -571,7 +571,7 @@ export const knowledgeApi = {
   // ---- Code-Graph ----
 
   code: {
-    /** 创建（注册仓库）。私有仓：providerId + secret（+ username）一并传入，KS 入队前落凭据。 */
+    /** Create (register a repo). For private repos pass providerId + secret (+ username) together; KS stores the credentials before enqueueing. */
     create: (opts: {
       teamId: string;
       repoUrl: string;
@@ -595,39 +595,39 @@ export const knowledgeApi = {
           : {}),
       }),
 
-    /** @deprecated 使用 teamAssets */
+    /** @deprecated Use teamAssets */
     list: async (teamId: string): Promise<CodeGraphDetail[]> => {
       const d = await panelPost<{ items: CodeGraphDetail[]; total: number }>('/code-graph/list', { team_id: teamId });
       return d.items ?? [];
     },
 
-    /** 团队 Code 池 */
+    /** Team Code pool */
     teamAssets: async (teamId: string): Promise<CodeGraphDetail[]> => {
       const items = await listTeamAssets('/code-graph/team-assets', teamId);
       return items.map(assetItemToCode);
     },
 
-    /** code ready 后登记 meta（create 时不写 meta） */
+    /** Register meta once code is ready (create does not write meta) */
     registerMeta: (teamId: string, codeGraphId: string): Promise<void> =>
       panelPost('/code-graph/register-meta', { team_id: teamId, code_graph_id: codeGraphId }),
 
-    /** 触发 sync（异步，同 ingest 轮询 get） */
+    /** Trigger sync (async; poll get as with ingest) */
     sync: (codeGraphId: string): Promise<void> =>
       panelPost('/code-graph/sync', { code_graph_id: codeGraphId }),
 
-    /** 删除 */
+    /** Delete */
     delete: (codeGraphId: string): Promise<void> =>
       panelPost('/code-graph/delete', { code_graph_ids: [codeGraphId] }),
 
-    /** 代码搜索（返回 { text, isError } 文本块） */
+    /** Code search (returns { text, isError } text blocks) */
     search: (opts: { codeGraphId: string; query: string; kind?: string; limit?: number }): Promise<{ text: string; isError: boolean }> =>
       panelPost('/code-graph/search', { code_graph_id: opts.codeGraphId, query: opts.query, ...(opts.kind && opts.kind !== 'any' ? { kind: opts.kind } : {}), limit: opts.limit ?? 10 }),
 
-    /** 代码探索（返回 { text, isError } 文本块） */
+    /** Code explore (returns { text, isError } text blocks) */
     explore: (codeGraphId: string, query: string): Promise<{ text: string; isError: boolean }> =>
       panelPost('/code-graph/explore', { code_graph_id: codeGraphId, query }),
 
-    /** 详情（用于 sync 后轮询） */
+    /** Details (for polling after sync) */
     get: (codeGraphId: string): Promise<CodeGraphDetail> =>
       panelPost('/code-graph/get', { code_graph_id: codeGraphId }),
 
@@ -654,20 +654,20 @@ export const knowledgeApi = {
     },
   },
 
-  // ---- 外部来源（工蜂 / GitHub / GitLab）----
-  // 凭据挂在**资源**上（resource_type + resource_id），不属人；不再有全局 list 端点。
+  // ---- External sources (Gongfeng / GitHub / GitLab) ----
+  // Credentials are attached to the **resource** (resource_type + resource_id), not to a person; there is no longer a global list endpoint.
   source: {
-    /** 已启用的 codegraph 来源列表（注册表单下拉数据源）。 */
+    /** Enabled codegraph sources (data source for the registration form dropdown). */
     providers: (teamId: string): Promise<SourceProviderMeta[]> =>
       panelPost<{ items: SourceProviderMeta[] }>('/source/providers', { team_id: teamId })
         .then((d) => d.items ?? []),
 
-    /** 已启用的 wiki 来源列表（注册表单下拉数据源）。 */
+    /** Enabled wiki sources (data source for the registration form dropdown). */
     wikiProviders: (teamId: string): Promise<SourceProviderMeta[]> =>
       panelPost<{ items: SourceProviderMeta[] }>('/source/wiki-providers', { team_id: teamId })
         .then((d) => d.items ?? []),
 
-    /** 列远端文档（resolveRoot + listPages）。crawl 省略 → 用 provider 默认策略。 */
+    /** List remote docs (resolveRoot + listPages). Omitting crawl → use the provider's default strategy. */
     wikiList: (opts: {
       teamId: string;
       wikiId: string;
@@ -683,7 +683,7 @@ export const knowledgeApi = {
         ...(opts.crawl ? { crawl: opts.crawl } : {}),
       }),
 
-    /** 导入远端文档（拉取 + 写盘，不触发 ingest）。 */
+    /** Import remote docs (fetch + write to disk, does not trigger ingest). */
     wikiImport: (opts: {
       teamId: string;
       wikiId: string;
@@ -699,7 +699,7 @@ export const knowledgeApi = {
         ...(opts.pageIds ? { page_ids: opts.pageIds } : {}),
       }),
 
-    /** 某资源的凭据状态（仅元数据，无明文）。未配置返回 null。 */
+    /** Credential status of a resource (metadata only, no plaintext). Returns null if not configured. */
     credentialStatus: (opts: {
       teamId: string;
       resourceType: SourceResourceType;
@@ -710,7 +710,7 @@ export const knowledgeApi = {
         { team_id: opts.teamId, resource_type: opts.resourceType, resource_id: opts.resourceId },
       ).then((d) => d.credential ?? null),
 
-    /** 写入 / 更新某资源的令牌（明文仅此一次经 Panel 转发给 KS，前端不留存）。 */
+    /** Write / update a resource's token (plaintext passes through Panel to KS only this once; the frontend keeps nothing). */
     credentialPut: (opts: {
       teamId: string;
       resourceType: SourceResourceType;
@@ -730,7 +730,7 @@ export const knowledgeApi = {
         ...(opts.username ? { username: opts.username } : {}),
       }).then((d) => d.credential),
 
-    /** 删除某资源的令牌。 */
+    /** Delete a resource's token. */
     credentialDelete: (opts: {
       teamId: string;
       resourceType: SourceResourceType;
@@ -743,16 +743,16 @@ export const knowledgeApi = {
       }),
   },
 
-  // ---- Connectors（导入 iwiki / TAPD 文档） ----
+  // ---- Connectors (import iwiki / TAPD docs) ----
   connectors: {
     pull: (name: string, params: Record<string, unknown>): Promise<void> =>
       panelPost('/connectors/pull', { name, ...params }),
   },
 };
 
-// ========================= 工具函数 =========================
+// ========================= Utility functions =========================
 
-/** 轮询 wiki ingest 状态直到 ready/failed */
+/** Poll wiki ingest status until ready/failed */
 export async function pollWikiStatus(wikiId: string, maxAttempts = 30, intervalMs = 3000): Promise<WikiDetail> {
   for (let i = 0; i < maxAttempts; i++) {
     const detail = await knowledgeApi.wiki.get(wikiId);
@@ -762,7 +762,7 @@ export async function pollWikiStatus(wikiId: string, maxAttempts = 30, intervalM
   throw new Error(i18n.t('knowledgeApi.wikiIngestTimeout', { wikiId }));
 }
 
-/** 轮询 code-graph sync 状态 */
+/** Poll code-graph sync status */
 export async function pollCodeGraphStatus(codeGraphId: string, maxAttempts = 30, intervalMs = 5000): Promise<CodeGraphDetail> {
   for (let i = 0; i < maxAttempts; i++) {
     const detail = await knowledgeApi.code.get(codeGraphId);

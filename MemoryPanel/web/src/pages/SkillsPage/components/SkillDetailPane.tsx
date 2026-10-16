@@ -1,14 +1,14 @@
 /**
- * SkillDetailPane — SkillsPanel 右栏，展示单条 skill 的 frontmatter、正文
- * Markdown 与资源文件树；owner 还可在此就地编辑。
+ * SkillDetailPane — right column of SkillsPanel, showing a single skill's frontmatter, body
+ * Markdown and resource file tree; owners can also edit in place here.
  *
- * 编辑能力（仅 canEdit=owner 时开放，写操作均带 expected_version 乐观锁）：
- *   - 正文：编辑完整 SKILL.md（updateSkill）
- *   - 资源文件：新建 / 编辑 / 删除（writeSkillFiles / removeSkillFiles）
- *   - 版本历史：按需加载并只读查看任一历史版本（listSkillVersions + getSkill@version）
+ * Editing (only available when canEdit=owner; all writes carry the expected_version optimistic lock):
+ *   - Body: edit the full SKILL.md (updateSkill)
+ *   - Resource files: create / edit / delete (writeSkillFiles / removeSkillFiles)
+ *   - Version history: loaded on demand, view any past version read-only (listSkillVersions + getSkill@version)
  *
- * 任一写操作成功后 version 会 +1，因此统一 reload() 重新拉取详情并通知父组件刷新列表，
- * 保证下一次编辑携带的 expected_version 是最新值。
+ * After any successful write the version is +1, so reload() always refetches the details and notifies the parent to refresh the list,
+ * ensuring the next edit carries the latest expected_version.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -75,7 +75,7 @@ function buildFileTree(paths: string[]): FileTreeNode[] {
 }
 
 function FileTreeView(props: { nodes: FileTreeNode[]; onPick: (path: string) => void }) {
-  // 缩进靠嵌套 ul 的固定 padding（见 css），不在 li 上写动态内联 style。
+  // Indentation comes from the fixed padding of nested ul (see css), not dynamic inline style on li.
   return (
     <ul className="_memory-skill-filetree">
       {props.nodes.map((n) => (
@@ -101,51 +101,51 @@ function FileTreeView(props: { nodes: FileTreeNode[]; onPick: (path: string) => 
 }
 
 export default function SkillDetailPane(props: {
-  /** 当前选中的 skill_id —— 权威选中标识，直接来自 selectedSkillId（独立 state），
-   *  不经过列表派生，因此不受 agent/skill 列表加载或刷新时序影响。 */
+  /** Currently selected skill_id: the authoritative selection, taken directly from selectedSkillId (independent state),
+   *  not derived from the list, so it's unaffected by the timing of agent/skill list loads or refreshes. */
   skillId?: string;
-  /** 列表里已知的 skill 名（作标题）；列表未加载完时可能暂为 null，详情返回后用 view.name 兜底 */
+  /** Known skill name from the list (used as title); may be null while the list is loading, falls back to view.name once details return */
   skillName: string | null;
-  /** 当前 team（写操作入参）；缺省时回退到详情里的 team_id */
+  /** Current team (write input); falls back to team_id from the details when missing */
   teamId?: string;
-  /** 当前登录用户 id（写操作入参 user_id） */
+  /** Current logged-in user id (write input user_id) */
   userId?: string;
-  /** 当前用户是否可编辑该 skill（owner）；false 时全部编辑入口隐藏 */
+  /** Whether the current user can edit this skill (owner); when false all edit entry points are hidden */
   canEdit?: boolean;
-  /** 编辑成功后回调父组件刷新列表（版本/时间变化） */
+  /** Callback for the parent to refresh the list after a successful edit (version/time changes) */
   onChanged?: () => void;
 }) {
   const { t } = useTranslation();
   const [view, setView] = useState<SkillDetail | null>(null);
-  // 初始为 true：有 skillId 时首帧就处于「加载中」，避免首次进入先闪一帧空白再变加载态
+  // Initially true: with a skillId the first frame is already "loading", avoiding a blank flash before the loading state on first entry
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filePreview, setFilePreview] = useState<ReadFileResult | null>(null);
   const [filePreviewLoading, setFilePreviewLoading] = useState(false);
 
-  // 正文编辑态
+  // Body edit state
   const [editingBody, setEditingBody] = useState(false);
   const [bodyDraft, setBodyDraft] = useState('');
   const [savingBody, setSavingBody] = useState(false);
 
-  // 文件编辑态（在预览 Modal 内）
+  // File edit state (inside the preview Modal)
   const [fileEditing, setFileEditing] = useState(false);
   const [fileDraft, setFileDraft] = useState('');
   const [fileSaving, setFileSaving] = useState(false);
 
-  // 新建文件 Modal
+  // New file Modal
   const [showNewFile, setShowNewFile] = useState(false);
   const [newFilePath, setNewFilePath] = useState('');
   const [newFileContent, setNewFileContent] = useState('');
   const [newFileSaving, setNewFileSaving] = useState(false);
 
-  // 版本历史
+  // Version history
   const [showVersions, setShowVersions] = useState(false);
   const [versions, setVersions] = useState<SkillSummary[] | null>(null);
   const [versionsLoading, setVersionsLoading] = useState(false);
   const [versionView, setVersionView] = useState<SkillDetail | null>(null);
   const [versionViewLoading, setVersionViewLoading] = useState(false);
-  // 历史版本查看 Modal 内的文件预览
+  // File preview inside the history version Modal
   const [versionFile, setVersionFile] = useState<ReadFileResult | null>(null);
   const [versionFileLoading, setVersionFileLoading] = useState(false);
 
@@ -173,7 +173,7 @@ export default function SkillDetailPane(props: {
   }, [skillId]);
 
   useEffect(() => {
-    // 切换 skill 时重置所有编辑/版本态，避免残留上一条的草稿
+    // Reset all edit/version state when switching skills, to avoid leftover drafts from the previous one
     setView(null);
     setEditingBody(false);
     setVersions(null);
@@ -184,8 +184,8 @@ export default function SkillDetailPane(props: {
     loadDetail();
   }, [loadDetail]);
 
-  // view 的清空发生在切换时，渲染期先按 skill_id 校验归属：不属于当前 skillId 就
-  // 视为「尚未加载」，避免切换时闪一帧上一个 skill 的正文 / 描述。
+  // view is cleared on switch, so during render first check ownership by skill_id: if it doesn't belong to the current skillId,
+  // treat it as "not yet loaded", avoiding a flash of the previous skill's body / description on switch.
   const stale = !!view && view.skill_id !== skillId;
   const currentView = stale ? null : view;
   const showLoading = !!skillId && (loading || stale);
@@ -195,7 +195,7 @@ export default function SkillDetailPane(props: {
     [currentView],
   );
 
-  // 写操作统一入参：team_id 优先用 props，回退详情；agent_id = owner_agent_id
+  // Shared write inputs: team_id prefers props, falls back to details; agent_id = owner_agent_id
   const writeCtx = useMemo(() => {
     if (!currentView) return null;
     const teamId = props.teamId || currentView.team_id;
@@ -206,7 +206,7 @@ export default function SkillDetailPane(props: {
 
   const editable = canEdit && !!writeCtx;
 
-  // 写成功后：重新拉详情拿最新 version，并通知父组件刷新列表
+  // After a successful write: refetch details for the latest version, and notify the parent to refresh the list
   const reload = useCallback(() => {
     loadDetail();
     props.onChanged?.();
@@ -235,7 +235,7 @@ export default function SkillDetailPane(props: {
     }
   }
 
-  // ── 正文编辑 ──
+  // ── Body editing ──
   function startEditBody() {
     if (!currentView) return;
     setBodyDraft(currentView.content);
@@ -266,7 +266,7 @@ export default function SkillDetailPane(props: {
     }
   }
 
-  // ── 文件编辑（预览 Modal 内）──
+  // ── File editing (inside the preview Modal) ──
   function startEditFile() {
     if (!filePreview) return;
     setFileDraft(filePreview.content);
@@ -318,7 +318,7 @@ export default function SkillDetailPane(props: {
     }
   }
 
-  // ── 新建文件 ──
+  // ── New file ──
   async function createFile() {
     if (!currentView || !writeCtx) return;
     if (!newFilePath.trim()) {
@@ -345,7 +345,7 @@ export default function SkillDetailPane(props: {
     }
   }
 
-  // ── 版本历史 ──
+  // ── Version history ──
   async function loadVersions() {
     if (!currentView) return;
     setVersionsLoading(true);
@@ -382,7 +382,7 @@ export default function SkillDetailPane(props: {
     }
   }
 
-  // 历史版本查看 Modal 内的文件预览（只读，按 version 读取历史文件内容）
+  // File preview inside the history version Modal (read-only, reads historical file content by version)
   async function viewVersionFile(path: string) {
     if (!versionView) return;
     setVersionFileLoading(true);
@@ -431,14 +431,14 @@ export default function SkillDetailPane(props: {
   return (
     <Card className="_memory-skill-detail-card">
       <Card.Body className="_memory-skill-detail-body">
-        {/* 固定悬浮头部：skill 名 + 描述 + 操作栏（不随内容滚动，避免用户滑很久才点到功能） */}
+        {/* Fixed sticky header: skill name + description + action bar (doesn't scroll with content, so users don't have to scroll far to reach actions) */}
         <div className="_memory-skill-detail-head">
           <div className="_memory-skill-detail-head-main">
             <div className="_memory-skill-detail-head-info">
               <div className="_memory-skill-detail-name">{skillName ?? currentView?.name ?? ''}</div>
-              {/* skill_id（= asset_id）：给出可复制的资产标识，便于对接 API /
-                  排查问题时引用。用 skillId（权威选中值）而非 currentView，
-                  详情还在加载时也能立即显示。 */}
+              {/* skill_id (= asset_id): shows a copyable asset identifier for API integration /
+                  referencing when troubleshooting. Uses skillId (authoritative selection) rather than currentView,
+                  so it displays immediately even while details are loading. */}
               {skillId && (
                 <div className="_memory-skill-detail-id">
                   <span className="_memory-skill-detail-id-text" title={skillId}>
@@ -476,8 +476,8 @@ export default function SkillDetailPane(props: {
           </div>
         </div>
 
-        {/* 滚动内容区。刷新中（编辑/新建保存后 reload，此时 currentView 仍在）
-            叠加半透明遮罩 + loading，给出明确的加载反馈；首次加载（无 currentView）则显示纯 loading 文字。 */}
+        {/* Scrollable content area. While refreshing (reload after edit/create save, when currentView still exists)
+            overlay a translucent mask + loading for clear feedback; on first load (no currentView) show plain loading text. */}
         <div
           className={`_memory-skill-detail-scroll${showLoading && currentView ? ' _memory-skill-detail-scroll--refreshing' : ''}`}
         >
@@ -520,7 +520,7 @@ export default function SkillDetailPane(props: {
                 </pre>
               </div>
 
-              {/* Body（可编辑完整 SKILL.md，编辑入口在顶部固定操作栏） */}
+              {/* Body (full SKILL.md is editable; the edit entry is in the fixed top action bar) */}
               <div className="_memory-skill-detail-section">
                 <Text theme="label" parent="div" className="_memory-skill-detail-section-title">
                   {t('skills.detail.body')}
@@ -554,8 +554,8 @@ export default function SkillDetailPane(props: {
           )}
         </div>
 
-        {/* 附属资源固定在底部：中间正文可滚动，附属资源始终可见，无需滑到底部查找。
-            新建入口在顶部固定操作栏。 */}
+        {/* Attached resources are pinned to the bottom: the body in the middle scrolls, resources stay visible without scrolling to the end.
+            The create entry is in the fixed top action bar. */}
         {currentView && (
           <div className="_memory-skill-detail-footer">
             <Text theme="label" parent="div" className="_memory-skill-detail-section-title">
@@ -574,7 +574,7 @@ export default function SkillDetailPane(props: {
         )}
       </Card.Body>
 
-      {/* Inline file-preview modal（支持编辑 / 删除） */}
+      {/* Inline file-preview modal (supports edit / delete) */}
       {filePreview && (
         <Modal
           visible
@@ -634,7 +634,7 @@ export default function SkillDetailPane(props: {
         </Modal>
       )}
 
-      {/* 新建文件 Modal */}
+      {/* New file Modal */}
       {showNewFile && (
         <Modal
           visible
@@ -680,7 +680,7 @@ export default function SkillDetailPane(props: {
         </Modal>
       )}
 
-      {/* 版本历史列表 Modal */}
+      {/* Version history list Modal */}
       {showVersions && currentView && (
         <Modal
           visible
@@ -711,7 +711,7 @@ export default function SkillDetailPane(props: {
                         v{v.version}
                         {v.version === currentView.version && (
                           <span className="_memory-skill-version-current">
-                            （{t('skills.detail.versionCurrent')}）
+                            ({t('skills.detail.versionCurrent')})
                           </span>
                         )}
                       </span>
@@ -739,7 +739,7 @@ export default function SkillDetailPane(props: {
         </Modal>
       )}
 
-      {/* 历史版本查看 Modal（只读：正文 + 附属资源） */}
+      {/* History version view Modal (read-only: body + attached resources) */}
       {(versionView || versionViewLoading) && (
         <Modal
           visible
@@ -762,7 +762,7 @@ export default function SkillDetailPane(props: {
             ) : versionView ? (
               <>
                 <MarkdownView>{extractBody(versionView.content)}</MarkdownView>
-                {/* 该历史版本的附属资源（只读） */}
+                {/* Attached resources of this history version (read-only) */}
                 <div className="_memory-skill-detail-section _memory-skill-version-files">
                   <Text theme="label" parent="div" className="_memory-skill-detail-section-title">
                     {t('skills.detail.files', { count: versionView.manifest?.length ?? 0 })}
@@ -786,7 +786,7 @@ export default function SkillDetailPane(props: {
         </Modal>
       )}
 
-      {/* 历史版本文件预览 Modal（只读） */}
+      {/* History version file preview Modal (read-only) */}
       {(versionFile || versionFileLoading) && (
         <Modal
           visible
@@ -813,7 +813,7 @@ export default function SkillDetailPane(props: {
   );
 }
 
-/** 从 SKILL.md 中提取正文（去掉 YAML frontmatter） */
+/** Extract the body from SKILL.md (strip the YAML frontmatter) */
 function extractBody(content: string): string {
   const m = content.match(/^---\s*\r?\n[\s\S]*?\r?\n---\s*\r?\n?/);
   return m ? content.slice(m[0].length) : content;

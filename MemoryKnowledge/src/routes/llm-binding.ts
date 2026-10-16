@@ -7,10 +7,10 @@
  *
  *   POST /set     upsert binding (proxy|byo). Idempotent — re-posting overwrites,
  *                 which is how a lost binding is re-bound (TMC startup / manual curl).
- *                 `api_key` 可选：不传时保留原值（仅对已存在的记录生效）；首次创建必填。
+ *                 `api_key` is optional: if omitted the existing value is kept (only for existing records); required on first creation.
  *   POST /status  read-side binding status (never returns api_key).
- *   POST /list    列出所有 binding（不要求 service-id 头）。返回 has_api_key 标志，
- *                 不返回 api_key 明文。供 Panel 启动时缓存状态用。
+ *   POST /list    list all bindings (no service-id header required). Returns a has_api_key flag,
+ *                 never the plaintext api_key. Used by Panel to cache state at startup.
  *
  * These endpoints are internal (TMC control plane / operator curl). KS trusts the
  * internal network like its other routes; no extra auth layer is added here.
@@ -56,7 +56,7 @@ export function createLlmBindingRoutes(deps: LlmBindingRouteDeps): Hono {
     const baseUrl = asOptString(body.base_url);
     const enabled = body.enabled === undefined ? undefined : body.enabled !== false;
 
-    // proxy_base_url / base_url 始终必填（KS 调 LLM 需要地址）
+    // proxy_base_url / base_url are always required (KS needs an address to call the LLM)
     if (mode === "proxy" && !proxyBaseUrl) {
       return c.json(wrapError(400, "proxy mode requires proxy_base_url"), 400);
     }
@@ -64,7 +64,7 @@ export function createLlmBindingRoutes(deps: LlmBindingRouteDeps): Hono {
       return c.json(wrapError(400, "byo mode requires base_url"), 400);
     }
 
-    // api_key 校验：首次创建（KS 无此 service_id 记录）时必填；已存在记录时不传则保留原值。
+    // api_key validation: required on first creation (KS has no record for this service_id); for existing records, omitting it keeps the existing value.
     const existing = llmBindingStore.get(serviceId);
     if (!existing) {
       if (!apiKey) {
@@ -75,7 +75,7 @@ export function createLlmBindingRoutes(deps: LlmBindingRouteDeps): Hono {
     const row = llmBindingStore.upsert(serviceId, {
       mode,
       proxy_base_url: proxyBaseUrl ?? null,
-      // asOptString 返回 string | undefined；upsert 层把 undefined 解释为"保留原值"
+      // asOptString returns string | undefined; the upsert layer interprets undefined as "keep existing value"
       api_key: apiKey,
       base_url: baseUrl ?? null,
       enabled,
@@ -101,7 +101,7 @@ export function createLlmBindingRoutes(deps: LlmBindingRouteDeps): Hono {
   });
 
   app.post("/list", async (c) => {
-    // 不要求 x-tdai-service-id 头：返回所有 binding，供 Panel 启动时缓存全局状态。
+    // No x-tdai-service-id header required: returns all bindings so Panel can cache global state at startup.
     const items = llmBindingStore.listAll().map((r) => ({
       service_id: r.service_id,
       mode: r.mode,

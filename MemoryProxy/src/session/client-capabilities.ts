@@ -11,7 +11,7 @@
  *
  * Scope（当前迭代）：只判定 workbuddy 有没有 `AskUserQuestion` 工具。
  * 其他客户端一律 `askUserQuestion: true`（走原逻辑），避免误伤 dsh / codebuddy /
- * claude-code / codex / opencode / hermes / openclaw 的既有分支。
+ * claude-code / codex / opencode / openclaw 的既有分支。
  */
 
 // ── Constants ──────────────────────────────────────────────────────────────────

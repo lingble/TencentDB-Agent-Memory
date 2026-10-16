@@ -1,7 +1,7 @@
 /**
  * TdaiCore — Host-neutral facade for TDAI memory capabilities.
  *
- * This is the single entry point that both OpenClaw and Hermes/Gateway call
+ * This is the single entry point that both OpenClaw and the standalone Gateway call
  * to perform recall, capture, search, and pipeline management. It depends
  * only on abstract interfaces (HostAdapter, LLMRunner), never on a specific host.
  *
@@ -382,7 +382,7 @@ export class TdaiCore {
 
   /**
    * Handle recall (memory retrieval) before an LLM turn.
-   * Maps to: OpenClaw `before_prompt_build` / Hermes `prefetch()`.
+   * Maps to: OpenClaw `before_prompt_build` / Gateway recall.
    */
   async handleBeforeRecall(userText: string, sessionKey: string): Promise<RecallResult> {
     await this.storeReady?.catch(() => {});
@@ -420,7 +420,7 @@ export class TdaiCore {
 
   /**
    * Handle turn commitment (conversation capture + pipeline trigger).
-   * Maps to: OpenClaw `agent_end` / Hermes `sync_turn()`.
+   * Maps to: OpenClaw `agent_end` / Gateway capture.
    */
   async handleTurnCommitted(turn: CompletedTurn): Promise<CaptureResult> {
     await this.storeReady?.catch(() => {});
@@ -499,7 +499,7 @@ export class TdaiCore {
    *     VectorStore, EmbeddingService, caches.  That is
    *     {@link destroy}, not this method.
    *
-   *   - **`on_session_end` (Hermes) / `POST /session/end` (Gateway)**
+   *   - **`POST /session/end` (Gateway)**
    *     One conversation ended while the process keeps serving other
    *     concurrent sessions.  **Only** this session's buffered work
    *     should be flushed; every other session's timers, buffers,

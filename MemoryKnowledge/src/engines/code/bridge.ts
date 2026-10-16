@@ -1,8 +1,8 @@
 /**
- * CodeGraph Bridge — 封装 @colbymchenry/codegraph 的核心 API。
+ * CodeGraph Bridge — wraps the core API of @colbymchenry/codegraph.
  *
- * 将 CodeGraph 实例 + ToolHandler 包装为简洁的调用接口，
- * 上层 API 只需调 bridge 方法即可，不直接依赖 codegraph 内部结构。
+ * Wraps the CodeGraph instance + ToolHandler into a concise call interface;
+ * upper-layer APIs just call bridge methods without depending on codegraph internals.
  */
 
 import { createRequire } from "node:module";
@@ -15,12 +15,12 @@ let _codegraphModule: any = null;
 let _toolsModule: any = null;
 
 /**
- * 解析 ToolHandler 所在的 mcp/tools 模块路径。
+ * Resolve the path of the mcp/tools module that contains ToolHandler.
  *
- * npm 主包的入口是 npm-sdk.js，它在运行时 require 平台包
- * （如 @colbymchenry/codegraph-linux-x64）的 lib/dist/index.js。
- * mcp/tools.js 在平台包的 lib/dist/mcp/ 下。必须从 npm 主包的路径解析：
- * pnpm 的 strict 隔离不会把主包的 optional dependency 暴露给 KS 根目录。
+ * The npm main package's entry is npm-sdk.js, which at runtime requires the platform package's
+ * (e.g. @colbymchenry/codegraph-linux-x64) lib/dist/index.js.
+ * mcp/tools.js lives under the platform package's lib/dist/mcp/. It must be resolved from the npm main package's path:
+ * pnpm's strict isolation does not expose the main package's optional dependencies to the KS root.
  */
 export function resolveToolsPath(): string {
   const appRequire = createRequire(import.meta.url);
@@ -55,9 +55,9 @@ async function loadModules() {
 }
 
 /**
- * CJS 包在 ESM 下 `import()` 会被包成 `{ default: module.exports }`；
- * CJS 模式（tsx）下 `import()` 被转成 `require()`，返回的是展开对象。
- * 这里统一展开，两种模式都能正确取到导出。
+ * Under ESM, `import()` of a CJS package is wrapped as `{ default: module.exports }`;
+ * in CJS mode (tsx), `import()` is transpiled to `require()` and returns the unwrapped object.
+ * Unwrap uniformly here so exports resolve correctly in both modes.
  */
 function unwrapCjs<T>(mod: T): T {
   const m = mod as unknown as { default?: unknown };
@@ -84,7 +84,7 @@ export interface CodeGraphInstance {
 }
 
 /**
- * 打开一个已存在的 codegraph 索引。
+ * Open an existing codegraph index.
  */
 export async function openIndex(projectPath: string): Promise<CodeGraphInstance> {
   log.info("openIndex", { projectPath });
@@ -93,7 +93,7 @@ export async function openIndex(projectPath: string): Promise<CodeGraphInstance>
   const stats = cg.getStats();
   log.info("openIndex complete", { projectPath, stats });
   const handler = new ToolHandler(cg);
-  // 告诉 ToolHandler 项目根在哪，避免它拿进程 cwd 做 worktree 检测导致误报
+  // Tell ToolHandler where the project root is, so it doesn't use the process cwd for worktree detection and report false positives
   if (typeof handler.setDefaultProjectHint === "function") {
     handler.setDefaultProjectHint(projectPath);
   }
@@ -101,7 +101,7 @@ export async function openIndex(projectPath: string): Promise<CodeGraphInstance>
 }
 
 /**
- * 对一个项目目录进行全量索引。
+ * Fully index a project directory.
  */
 export async function indexProject(projectPath: string): Promise<CodeGraphInstance> {
   log.info("indexProject start", { projectPath });
@@ -112,12 +112,12 @@ export async function indexProject(projectPath: string): Promise<CodeGraphInstan
 
   let cg: any;
   if (initialized) {
-    // 已有索引，打开并重新全量索引
+    // Index already exists: open it and fully re-index
     log.info("Re-indexing existing project");
     cg = await CodeGraph.open(projectPath);
     await cg.indexAll();
   } else {
-    // 首次初始化：创建目录结构 + DB + 全量索引
+    // First-time init: create directory structure + DB + full index
     log.info("First-time init + index");
     cg = await CodeGraph.init(projectPath, { index: true });
   }
@@ -134,7 +134,7 @@ export async function indexProject(projectPath: string): Promise<CodeGraphInstan
 }
 
 /**
- * 增量同步（只处理变化的文件）。
+ * Incremental sync (processes only changed files).
  */
 export async function syncIndex(instance: CodeGraphInstance): Promise<{ changed: number }> {
   log.info("syncIndex start", { projectRoot: instance.projectRoot });
@@ -145,7 +145,7 @@ export async function syncIndex(instance: CodeGraphInstance): Promise<{ changed:
 }
 
 /**
- * 执行 codegraph MCP 工具（复用 ToolHandler 的格式化输出）。
+ * Execute a codegraph MCP tool (reuses ToolHandler's formatted output).
  */
 export async function executeTool(
   instance: CodeGraphInstance,
@@ -154,7 +154,7 @@ export async function executeTool(
 ): Promise<{ text: string; isError: boolean }> {
   log.info("executeTool", { toolName, params, projectRoot: instance.projectRoot });
 
-  // 检查 handler 实例状态
+  // Inspect handler instance state
   log.debug("handler state", {
     handlerType: typeof instance.handler,
     handlerKeys: Object.keys(instance.handler),
@@ -179,7 +179,7 @@ export async function executeTool(
 }
 
 /**
- * 获取索引统计信息。
+ * Get index statistics.
  */
 export function getStats(instance: CodeGraphInstance) {
   const stats = instance.cg.getStats();
@@ -188,7 +188,7 @@ export function getStats(instance: CodeGraphInstance) {
 }
 
 /**
- * 关闭索引（释放 SQLite 连接）。
+ * Close the index (releases the SQLite connection).
  */
 export function closeIndex(instance: CodeGraphInstance): void {
   log.info("closeIndex", { projectRoot: instance.projectRoot });

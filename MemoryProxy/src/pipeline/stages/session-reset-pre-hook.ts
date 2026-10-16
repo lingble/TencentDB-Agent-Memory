@@ -8,7 +8,7 @@
  *   - workbuddy runner:   同 codex
  *
  * 语义:
- *   1. header-only agent (pi/hermes/openclaw) 或 dsh headless: 收到 mem:session-reset
+ *   1. header-only agent (pi/openclaw) 或 dsh headless: 收到 mem:session-reset
  *      → 返回"不支持"文案 (客户端不认 fake tool_call, 弹 form 会挂)
  *   2. 其他 agent: bind session → 归档旧 skill buffer (best-effort) → 重置 store
  *      → 删 binding, 让主 pipeline 后续弹 form 完成 reset

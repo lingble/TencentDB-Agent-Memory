@@ -1,7 +1,7 @@
 /**
  * Type definitions for the Skill module — v2 redesign (2026-06-17).
  *
- * Host-neutral. No imports from openclaw / hermes / automation projects.
+ * Host-neutral. No imports from openclaw / automation projects.
  * 设计文档：docs/design/2026-06-17-skill-redesign-v2.md
  */
 

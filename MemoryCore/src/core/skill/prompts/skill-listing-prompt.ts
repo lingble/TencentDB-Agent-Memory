@@ -3,14 +3,13 @@
  * `<available_skills>` block injected into agent system prompts.
  *
  * Both header and footer come from SKILL_ENGINEERING_DESIGN appendix C.1.
- * The router (M5) wraps the actual entries between them. Hermes uses the
- * exact same wording, so this file should NOT diverge — keep it byte-equal
- * with the design doc.
+ * The router (M5) wraps the actual entries between them. Keep this file
+ * byte-equal with the design doc.
  *
  * NOTE (skill_view id 模式): 原文 "load it with skill_view(name)" 已改为不绑定
  * 具体参数字段的中性表述,因为默认已切到 id 模式(skill_view 传 skill_id)。
  * 具体传 id 还是 name 由 skill_view 工具描述 + <available_skills> 每行格式说明决定。
- * 若同步 Hermes / 设计文档,请一并更新这句,勿当作笔误改回。
+ * 若同步设计文档,请一并更新这句,勿当作笔误改回。
  */
 
 export const SKILL_LISTING_HEADER =

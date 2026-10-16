@@ -1,202 +1,198 @@
 # Agents
 
-Memory Proxy 目前适配了 7 类 AI Agent 客户端，各自协议、会话初始化方式、注入逻辑差异显著。
+Memory Proxy currently supports 7 kinds of AI Agent clients. They differ significantly in protocol, session-initialization method, and injection logic.
 
-> 🛠 **想接入一个新的 AI Agent 客户端（未在下表中）？**
-> 阅读 [**新客户端二开适配指南 →**](./adapter-agent-development.md)
-> 里面有从"抓包摸底"到"proxy 侧改路由 / adapter / session-init"到"端到端 e2e 通过"的 20 项 checklist、8 类常见坑速查，以及可以照抄的 dsh 参考实现。
+> 🛠 **Want to integrate a new AI Agent client (not in the table below)?**
+> Read the [**New Client Adapter Development Guide →**](./adapter-agent-development.md)
+> It covers everything from "capture traffic and survey the client" through "proxy-side routing / adapter / session-init changes" to "end-to-end e2e passing": a 20-item checklist, a quick reference for 8 common pitfalls, and a dsh reference implementation you can copy.
 
-## 快速开始
+## Quick Start
 
-### 方式一：人工运行脚本
+### Option 1: Run the script manually
 
 ```bash
-cd <本仓库根目录>
+cd <repo root>
 bash agents/setup-proxy.sh
 ```
 
-交互式向导，一步步引导你完成 Agent 接入 Proxy 的配置：
-1. 自动扫描现有配置（有则复用，无需重复填写）
-2. 选择要配置的 Agent
-3. 填写模型 ID
-4. 健康探测（验证 Proxy 连通性）
-5. 写入配置文件（自动备份原文件为 `.bak`）
-6. 可选：导入本地 skill/对话到团队记忆
+An interactive wizard walks you step by step through configuring an Agent to use the Proxy:
+1. Automatically scans existing configuration (reused if present, no need to re-enter)
+2. Select the Agent to configure
+3. Enter the model ID
+4. Health probe (verifies Proxy connectivity)
+5. Write the config file (the original is automatically backed up as `.bak`)
+6. Optional: import local skills/conversations into team memory
 
-支持所有 7 个 Agent，每次配一个，多次运行配置不同 Agent。
+All 6 Agents are supported. Configure one per run; run it multiple times to configure different Agents.
 
-### 方式二：通过 AI Agent 辅助配置（Skill）
+### Option 2: AI Agent-assisted configuration (Skill)
 
-让 Claude Code / CodeBuddy 等 AI Agent 根据 skill 引导你完成配置，agent 会逐步探测环境、验证连通性、动态选择。
+Let an AI Agent such as Claude Code / CodeBuddy guide you through configuration using the skill. The agent probes the environment, verifies connectivity, and makes choices dynamically step by step.
 
-#### 第 1 步：把 agents 目录复制到 home 下
+#### Step 1: Copy the agents directory into your home directory
 
 ```bash
-cd <本仓库根目录>
+cd <repo root>
 cp -r agents ~/agents
 ```
 
-#### 第 2 步：在 AI Agent 对话中使用以下 prompt
+#### Step 2: Use one of the following prompts in the AI Agent conversation
 
-> 注意：执行脚本前 agent 需要先 `cd ~/agents` 进入目录。
+> Note: the agent must `cd ~/agents` before running the script.
 
-**配置新 Agent 接入 Proxy：**
-
-```
-请阅读 ~/agents/skills/setup-proxy/SKILL.md 这个 skill 文档，然后按照里面的步骤引导我完成 Agent 接入 Memory Proxy 的配置。
-```
-
-**配置指定 Agent（如 Claude Code）：**
+**Configure a new Agent to use the Proxy:**
 
 ```
-请阅读 ~/agents/skills/setup-proxy/SKILL.md，帮我配置 Claude Code 接入 Memory Proxy。我的 proxy 地址是 http://localhost:8096，实例 ID 是 default。
+Please read the skill document ~/agents/skills/setup-proxy/SKILL.md, then follow its steps to guide me through configuring an Agent to use Memory Proxy.
 ```
 
-**配置 Hermes/OpenClaw（需要 header 预选）：**
+**Configure a specific Agent (e.g. Claude Code):**
 
 ```
-请阅读 ~/agents/skills/setup-proxy/SKILL.md，帮我配置 Hermes 接入 Memory Proxy。面板地址是 http://localhost:8125，帮我从面板拉取 team/agent 列表来选择。
+Please read ~/agents/skills/setup-proxy/SKILL.md and help me configure Claude Code to use Memory Proxy. My proxy address is http://localhost:8096 and the instance ID is default.
 ```
 
-**只做健康探测（不写配置）：**
+**Configure OpenClaw (requires header pre-selection):**
 
 ```
-请阅读 ~/agents/skills/setup-proxy/SKILL.md，帮我探测一下 http://localhost:8096 这个 proxy 是否正常，用 codebuddy 协议，模型 claude-opus-4.7。
+Please read ~/agents/skills/setup-proxy/SKILL.md and help me configure OpenClaw to use Memory Proxy. The panel address is http://localhost:8125; pull the team/agent list from the panel so I can choose.
 ```
 
-> ℹ️ Skill 文件位于 `agents/skills/setup-proxy/SKILL.md`，配套脚本 `agents/skills/setup-proxy/setup-proxy.sh`。Agent 负责逐步收集信息和验证环境，最终调用脚本的 `--non-interactive` 模式完成配置写入。
+**Health probe only (no config written):**
+
+```
+Please read ~/agents/skills/setup-proxy/SKILL.md and help me probe whether the proxy at http://localhost:8096 is healthy, using the codebuddy protocol and model claude-opus-4.7.
+```
+
+> ℹ️ The skill file is at `agents/skills/setup-proxy/SKILL.md`, with its companion script `agents/skills/setup-proxy/setup-proxy.sh`. The Agent collects information and verifies the environment step by step, then calls the script in `--non-interactive` mode to write the configuration.
 
 ---
 
-每个子目录对应一个 agent，内含：
-- `README.md` — 接入配置、适配方式、Session Init 流程、常见问题
-- `asset-import.md` — 把该客户端本地 skill / memory / session 导入 Memory Hub（单文件手册）
-- `asset-import.ts` — 该客户端扫盘实现，统一入口为仓库根 `agents/asset-import.ts`，用 `--source <name>` 指定 IDE
-- 后续可放：适配过程记录、调试脚本、抓包 fixtures 等
+Each subdirectory corresponds to one agent and contains:
+- `README.md` — integration config, adaptation approach, Session Init flow, FAQ
+- `asset-import.md` — import that client's local skills / memory / sessions into Memory Hub (single-file manual)
+- `asset-import.ts` — that client's disk-scan implementation; the unified entry point is `agents/asset-import.ts` at the repo root, with `--source <name>` selecting the IDE
+- May later hold: adaptation notes, debug scripts, capture fixtures, etc.
 
 ---
 
-## 快速对照表
+## Quick Comparison Table
 
-| Agent | 协议 | Session Init 方式 | Form Tool | 分页 | Default/Plan Gate | Headless Bypass |
+| Agent | Protocol | Session Init Method | Form Tool | Pagination | Default/Plan Gate | Headless Bypass |
 |-------|------|-------------------|-----------|------|-------------------|-----------------|
-| [Claude Code](./claude-code/) | Anthropic Messages | 交互式 Form | `AskUserQuestion` | ✅ (max 4) | ❌ | ❌ |
-| [CodeBuddy](./codebuddy/) | OpenAI Chat Completions | 交互式 Form | `ask_followup_question` | ❌ (无上限) | ❌ | ❌ |
-| [Codex](./codex/) | OpenAI Responses API | 交互式 Form + Default Gate | `request_user_input` | ✅ | ✅ | ❌ |
-| [WorkBuddy](./workbuddy/) | Responses (Desktop) / Chat (Web) | 交互式 Form | `AskUserQuestion` | ✅ (max 4) | ✅ | ✅ (静默透传) |
-| [dsh (DeepSeek Harness)](./dsh/) | OpenAI Chat Completions | 交互式 Form + Headless Bypass | `ask_user_question` | ❌ (无上限) | ❌ | ✅ (无 tool 时) |
-| [Hermes](./hermes/) | OpenAI Chat Completions | Header 预选（无 Form） | N/A | N/A | N/A | ✅ (header 缺失时) |
-| [OpenClaw](./openclaw/) | OpenAI Chat Completions | Header 预选（无 Form） | N/A | N/A | N/A | ✅ (header 缺失时) |
+| [Claude Code](./claude-code/) | Anthropic Messages | Interactive Form | `AskUserQuestion` | ✅ (max 4) | ❌ | ❌ |
+| [CodeBuddy](./codebuddy/) | OpenAI Chat Completions | Interactive Form | `ask_followup_question` | ❌ (no limit) | ❌ | ❌ |
+| [Codex](./codex/) | OpenAI Responses API | Interactive Form + Default Gate | `request_user_input` | ✅ | ✅ | ❌ |
+| [WorkBuddy](./workbuddy/) | Responses (Desktop) / Chat (Web) | Interactive Form | `AskUserQuestion` | ✅ (max 4) | ✅ | ✅ (silent passthrough) |
+| [dsh (DeepSeek Harness)](./dsh/) | OpenAI Chat Completions | Interactive Form + Headless Bypass | `ask_user_question` | ❌ (no limit) | ❌ | ✅ (when no tool) |
+| [OpenClaw](./openclaw/) | OpenAI Chat Completions | Header pre-selection (no Form) | N/A | N/A | N/A | ✅ (when headers missing) |
 
 ---
 
-## 本地资产导入
+## Local Asset Import
 
-把各客户端磁盘上的 skill / memory / 历史 session 导入 Memory Hub。每个客户端一个扫描文件，可直接跑：
+Import each client's on-disk skills / memory / historical sessions into Memory Hub. There is one scanner file per client, and you can run it directly:
 
 ```bash
-# 交互式导入（运行后逐项 y/N 询问 skill / memory / session）
+# Interactive import (after starting, asks y/N for skill / memory / session one by one)
 tsx agents/asset-import.ts --source claude-code --agent-id <id> --team-id <tid>
 
-# 非交互全量导入（脚本/CI）
+# Non-interactive full import (scripts/CI)
 tsx agents/asset-import.ts --source claude-code --agent-id <id> --team-id <tid> -y
 ```
 
 
-| Agent | 手册 |
+| Agent | Manual |
 |-------|------|
 | Claude Code | [asset-import.md](./claude-code/asset-import.md) |
 | CodeBuddy | [asset-import.md](./codebuddy/asset-import.md) |
 | Codex | [asset-import.md](./codex/asset-import.md) |
 | WorkBuddy | [asset-import.md](./workbuddy/asset-import.md) |
 | dsh | [asset-import.md](./dsh/asset-import.md) |
-| Hermes | [asset-import.md](./hermes/asset-import.md) |
 | OpenClaw | [asset-import.md](./openclaw/asset-import.md) |
 
 ---
 
-## Session ID Header 速查
+## Session ID Header Quick Reference
 
-| Agent | 主 Header | 备选 |
+| Agent | Primary Header | Fallbacks |
 |-------|-----------|------|
 | Claude Code | `x-claude-code-session-id` | `x-session-id`, `x-conversation-id` |
 | CodeBuddy | `x-conversation-id` | `x-session-id`, `x-cb-session-id`, `x-codebuddy-session-id` |
 | Codex | `session-id` | `body.client_metadata.session_id` |
 | WorkBuddy | `session-id` | `body.client_metadata.session_id` |
 | dsh | `x-deepseek-harness-session-id` | `x-session-id` |
-| Hermes | `x-conversation-id` | — (用户静态配置) |
-| OpenClaw | `x-conversation-id` | — (用户静态配置) |
+| OpenClaw | `x-conversation-id` | — (statically configured by the user) |
 
 ---
 
-## 客户端配置方式
+## Client Configuration Methods
 
-| Agent | 配置方式 | 配置文件 / 变量 | Key 传递 |
+| Agent | Method | Config File / Variables | Key Delivery |
 |-------|----------|-----------------|----------|
-| Claude Code | 环境变量 或 配置文件 | `~/.claude/settings.json` 或 env `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` | env / JSON `env.ANTHROPIC_AUTH_TOKEN` |
-| CodeBuddy | 配置文件 | `~/.codebuddy/models.json` | JSON `apiKey` |
-| Codex | 配置文件 | `~/.codex/config.toml` | TOML `experimental_bearer_token` |
-| WorkBuddy | 配置文件 | `~/.workbuddy/models.json` | JSON `apiKey` |
-| dsh | 配置文件 | `~/.dsh/settings.yaml` + `.credentials.yaml` | YAML 环境变量引用 |
-| Hermes | 配置文件 | `~/.hermes/config.yaml` | YAML `api_key` + headers |
-| OpenClaw | 配置文件 | `~/.openclaw/openclaw.json` | JSON `apiKey` + headers |
+| Claude Code | Environment variables or config file | `~/.claude/settings.json` or env `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` | env / JSON `env.ANTHROPIC_AUTH_TOKEN` |
+| CodeBuddy | Config file | `~/.codebuddy/models.json` | JSON `apiKey` |
+| Codex | Config file | `~/.codex/config.toml` | TOML `experimental_bearer_token` |
+| WorkBuddy | Config file | `~/.workbuddy/models.json` | JSON `apiKey` |
+| dsh | Config file | `~/.dsh/settings.yaml` + `.credentials.yaml` | YAML environment-variable reference |
+| OpenClaw | Config file | `~/.openclaw/openclaw.json` | JSON `apiKey` + headers |
 
 ---
 
-## 路由规则
+## Routing Rules
 
 ```
-/:agent/:spaceId/v1/messages          → Anthropic 协议 (CC, CB-Anthropic)
-/:agent/:spaceId/v1/chat/completions  → OpenAI Chat (CB, WB-web, dsh, Hermes, OpenClaw)
-/:agent/:spaceId/chat/completions     → OpenAI Chat 无 v1 前缀 (dsh)
+/:agent/:spaceId/v1/messages          → Anthropic protocol (CC, CB-Anthropic)
+/:agent/:spaceId/v1/chat/completions  → OpenAI Chat (CB, WB-web, dsh, OpenClaw)
+/:agent/:spaceId/chat/completions     → OpenAI Chat without v1 prefix (dsh)
 /:agent/:spaceId/v1/responses         → Responses API (Codex, WB-desktop)
-/:agent/:spaceId/responses            → Responses API 无 v1 前缀 (Codex, WB-desktop)
+/:agent/:spaceId/responses            → Responses API without v1 prefix (Codex, WB-desktop)
 ```
 
 ---
 
-## Header 预选（通用，所有 agent 均可使用）
+## Header Pre-selection (generic, available to all agents)
 
-除了交互式 Form 之外，**所有 agent** 都支持通过 HTTP Header 直接完成 session 注册，跳过表单交互。适用于：
-- 无法响应 form（如 Hermes / OpenClaw）
-- 想跳过表单加速首帧（如 CI/CD 自动化场景）
-- 第三方平台 / 自行开发的 Agent
+Besides the interactive Form, **all agents** can complete session registration directly through HTTP headers and skip the form interaction. Useful when:
+- The client cannot respond to a form (e.g. OpenClaw)
+- You want to skip the form to speed up the first turn (e.g. CI/CD automation)
+- Third-party platforms / in-house Agents
 
-### 必须携带的 Header
+### Required Headers
 
-| Header | 说明 |
+| Header | Description |
 |--------|------|
-| `Authorization: Bearer <user_key>` | 业务用户的 API Key（从面板获取） |
-| `x-team-id` | 团队 ID |
+| `Authorization: Bearer <user_key>` | The business user's API Key (obtained from the panel) |
+| `x-team-id` | Team ID |
 | `x-agent-id` | Agent ID |
-| `x-task-id` | 任务 ID（当前版本必填） |
-| `x-conversation-id` | 会话标识，由客户端自行生成和管理 |
+| `x-task-id` | Task ID (required in the current version) |
+| `x-conversation-id` | Session identifier, generated and managed by the client |
 
-以上 header 齐全 → Proxy 直接完成 session 注册 + 注入资产，不弹 form。  
-任一缺失 → 走交互式 form（如果客户端支持）或 session bypass（不支持 form 时）。
+All of the above headers present → the Proxy completes session registration and injects assets directly, with no form.  
+Any one missing → falls back to the interactive form (if the client supports it) or session bypass (if it does not).
 
-### 其他平台接入
+### Other Platforms
 
-任何兼容 OpenAI API 的平台均可接入，将 API base URL 指向 Proxy：
+Any OpenAI API-compatible platform can integrate by pointing its API base URL at the Proxy:
 
 ```text
 http://<proxy-host>:<port>/<agent-source>/<spaceId>
 ```
 
-- `<agent-source>`：必须从 Proxy 支持的值中选用：`claude-code`、`codebuddy`、`workbuddy`、`codex`、`hermes`、`openclaw`。其他平台可伪装成其中之一接入（如使用 `codebuddy`）
-- `<spaceId>`：memory 实例 ID（本地部署固定为 `default`）
+- `<agent-source>`: must be one of the values the Proxy supports: `claude-code`, `codebuddy`, `workbuddy`, `codex`, `openclaw`. Other platforms can integrate by posing as one of these (e.g. use `codebuddy`)
+- `<spaceId>`: memory instance ID (fixed to `default` for local deployments)
 
 ---
 
-## 新 Agent 接入流程概览
+## New Agent Integration Overview
 
-1. **抓包** — 用 mitmproxy 抓 3~5 种典型请求 (main / aux / title-gen)，存入 `MemoryProxy/docs/<agent>-recon/`
-2. **识别协议** — 确定 wire protocol (Anthropic / Chat / Responses)
-3. **确定 Session ID 来源** — 找 header 或 body 里的唯一会话标识
-4. **选择 Session Init 策略** — 有 tool → 交互式 form；无 tool → header 预选 / headless bypass
-5. **分类辅助请求** — 识别 title-gen / compact / fork 等不需要走全链路的请求
-6. **实现 Handler / 复用** — 协议相同的可共享 handler (如 dsh 复用 CB 的 handleChatCompletions)
-7. **注入 Profile** — 按客户端 system prompt 格式定义注入模板
-8. **E2E 验证** — 跑完整链路确认 session-init + 注入 + 归档正常
+1. **Capture traffic** — use mitmproxy to capture 3–5 typical requests (main / aux / title-gen) and store them under `MemoryProxy/docs/<agent>-recon/`
+2. **Identify the protocol** — determine the wire protocol (Anthropic / Chat / Responses)
+3. **Determine the Session ID source** — find the unique session identifier in headers or body
+4. **Choose a Session Init strategy** — has a tool → interactive form; no tool → header pre-selection / headless bypass
+5. **Classify auxiliary requests** — identify title-gen / compact / fork and other requests that don't need the full pipeline
+6. **Implement a Handler / reuse one** — clients with the same protocol can share a handler (e.g. dsh reuses CB's handleChatCompletions)
+7. **Injection Profile** — define the injection template to match the client's system prompt format
+8. **E2E verification** — run the full pipeline and confirm session-init + injection + archiving work
 
-👉 **完整二开步骤（20 项 checklist + 8 类坑速查 + dsh 参考实现）见 [`adapter-agent-development.md`](./adapter-agent-development.md)**。
+👉 **For the full development steps (20-item checklist + 8 pitfall quick reference + dsh reference implementation), see [`adapter-agent-development.md`](./adapter-agent-development.md)**.

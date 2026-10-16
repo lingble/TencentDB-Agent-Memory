@@ -3,22 +3,22 @@
  * skill library across two lenses and offers three write actions:
  * import / allocate / fork.
  *
- * Tab 语义：
- *   - team   ＝ 当前 team 内所有 agent 的固定资产并集（按 name 去重）；
- *              用户视角是"团队拥有的所有 skill"，数据上去掉了独立的「浮动池」概念。
- *   - fixed  ＝ 单个 agent 的固定资产（按 agent_id 隔离）。
+ * Tab semantics:
+ *   - team   = union of fixed assets of all agents in the current team (deduplicated by name);
+ *              from the user's view this is "all skills the team owns"; the separate "floating pool" concept is gone from the data.
+ *   - fixed  = fixed assets of a single agent (isolated by agent_id).
  *
- * 写操作：
- *   - 导入  → 仅在 fixed tab 下可用，落到当前选中的 agent。
- *   - 分配  → team tab 下选中一条 skill 后可用。后端走 team_to_agent 引用，
- *            被分配的 agent 拿到的是「只读」副本（共享 SKILL.md，编辑会动到团队版）。
- *   - Fork → team tab 下选中一条 skill 后可用。前端拼装 `fetchSkillFull → importSkill`，
- *            以 `<原名>-fork-<agentId>` 落新副本，agent 拿到的是独立可写副本。
+ * Write operations:
+ *   - Import  → only available on the fixed tab; lands on the currently selected agent.
+ *   - Assign  → available after selecting a skill on the team tab. The backend uses a team_to_agent reference;
+ *            the assigned agent gets a "read-only" copy (shared SKILL.md; editing changes the team version).
+ *   - Fork → available after selecting a skill on the team tab. The frontend chains `fetchSkillFull → importSkill`,
+ *            creating a new copy named `<original name>-fork-<agentId>`; the agent gets an independent writable copy.
  *
- * 权限模型：
- *   - admin 用户：全部可见 + 全部可操作
- *   - skill owner：可编辑自己的 skill；可选择是否让其他人可见
- *   - 其他人：只能看到 owner 设为可见的 skill（可见 = 可复制 + 只读使用）
+ * Permission model:
+ *   - admin users: can see everything + do everything
+ *   - skill owner: can edit their own skills; can choose whether others can see them
+ *   - others: can only see skills the owner made visible (visible = can copy + read-only use)
  *
  * Refresh strategy: poll on tab change + after every write action. No
  * setInterval — skill mutations are user-driven, the auto-refresh cost
@@ -91,7 +91,7 @@ export default function SkillsPanel({
 
   return (
     <div className="_memory-skills-body">
-      {/* 固定资产的 Agent 选择器与 Code 页 "Agent 资产" 选项栏保持相同呈现。 */}
+      {/* The fixed-asset Agent selector is rendered the same as the "Agent assets" option bar on the Code page. */}
       <AssetPageHeader
         title={t('skills.title')}
         subtitle={
@@ -171,7 +171,7 @@ export default function SkillsPanel({
         }
       />
 
-      {/* === 团队资产 / 固定资产 Tab === */}
+      {/* === Team assets / fixed assets tabs === */}
       <AssetSplitLayout
         storageKey="skills:assetSplitWidth"
         sidebar={
@@ -207,11 +207,11 @@ export default function SkillsPanel({
               return (
                 <>
                   <AssetItemHeader>
-                    {/* 版本 Tag 置于名称前，只在 fixed（Agent 资产）tab 展示：
-                        该 tab 数据源为 listSkills（skill 数据面），version 真实可信；
-                        team tab 走 assetsApi.listAccessible，asset 表无 version 字段
-                        （恒为兜底值 1，点开后才被 useSkillDetailCache 回填），
-                        展示会误导且出现跳变，故不显示。 */}
+                    {/* The version Tag goes before the name and is shown only on the fixed (Agent assets) tab:
+                        that tab's data source is listSkills (skill data plane), so version is real and reliable;
+                        the team tab uses assetsApi.listAccessible, and the asset table has no version field
+                        (it's always the fallback 1, backfilled by useSkillDetailCache only after opening),
+                        so showing it would be misleading and would jump, hence it's hidden. */}
                     {tab === 'fixed' && (
                       <Tooltip title={t('skills.versionTag.title', { version: s.version })}>
                         <Tag theme="primary" className="_memory-skill-item-version">
@@ -244,7 +244,7 @@ export default function SkillsPanel({
                     )}
                   </AssetItemHeader>
 
-                  {/* 第 2 行：资产真实 id，等宽灰色（与 ChatMemory 页同构） */}
+                  {/* Line 2: the asset's real id, monospace gray (same structure as the ChatMemory page) */}
                   <AssetItemId>{s.skill_id}</AssetItemId>
 
                   <AssetItemBadges>
@@ -261,10 +261,10 @@ export default function SkillsPanel({
                     <AssetItemTime>{new Date(s.updated_at_ms).toLocaleString()}</AssetItemTime>
                   </AssetItemBadges>
 
-                  {/* 共享/私密切换：原「个人资产」tab 的能力，迁到「Agent 资产」tab，
-                      仅 owner 可切；owner 视角 getAssets 已关闭 visibility 过滤，
-                      private skill 也能拿到 vis。即便 vis 偶发缺失也按 private 兜底渲染，
-                      避免 skill 被切成 private 后切换按钮消失、无法再切回 team。 */}
+                  {/* Shared/private toggle: a capability of the former "Personal assets" tab, moved to the "Agent assets" tab,
+                      only the owner can toggle; from the owner's view getAssets has visibility filtering disabled,
+                      so private skills also get vis. Even if vis is occasionally missing it falls back to rendering as private,
+                      so the toggle button doesn't disappear after a skill is switched to private, leaving no way to switch back to team. */}
                   {tab === 'fixed' && ownerIsMe && (
                     <div style={{ marginTop: 6 }} onClick={(e) => e.stopPropagation()}>
                       <Segment
@@ -285,12 +285,12 @@ export default function SkillsPanel({
         detail={
           <SkillDetailPane
             skillName={selectedSkill?.name ?? null}
-            // 传原始 selectedSkillId（独立 state）而非 selectedSkill?.skill_id（列表派生）：
-            // 选中即有值，不受 agent/skill 列表加载或刷新时序影响，避免详情面板先闪空态再变加载态。
+            // Pass the raw selectedSkillId (independent state) rather than selectedSkill?.skill_id (derived from the list):
+            // it has a value as soon as something is selected, independent of agent/skill list load or refresh timing, so the detail panel doesn't flash an empty state before the loading state.
             skillId={selectedSkillId ?? undefined}
             teamId={activeTeamId ?? undefined}
             userId={myUserId}
-            // 编辑权限与删除一致：仅 skill 的 owner（owner_user_id === 当前用户）可编辑
+            // Edit permission matches delete: only the skill's owner (owner_user_id === current user) can edit
             canEdit={!!myUserId && selectedSkill?.owner_user_id === myUserId}
             onChanged={() => void refresh()}
           />
@@ -299,10 +299,10 @@ export default function SkillsPanel({
 
       {/* Modals (only for team/fixed tabs) */}
       {showImport && (
-        // 导入弹窗在 team / fixed 两个 tab 都能打开。
-        // target 始终是 fixed —— 所有 skill 都归属于某个具体 agent。
-        // agentId 仅在 fixed tab 下作为默认归属带入；team tab 下传 undefined，
-        // 由弹窗内的「归属 Agent（必选）」下拉自行兜底选第一个。
+        // The import dialog can be opened on both the team and fixed tabs.
+        // target is always fixed - every skill belongs to a specific agent.
+        // agentId is passed as the default owner only on the fixed tab; on the team tab undefined is passed,
+        // and the dialog's "Owner Agent (required)" dropdown falls back to the first one itself.
         <ImportSkillDialog
           target="fixed"
           teamId={activeTeamId ?? ''}
@@ -311,9 +311,9 @@ export default function SkillsPanel({
           agentId={tab === 'fixed' ? selectedAgent : undefined}
           onClose={() => setShowImport(false)}
           onImported={() => {
-            // skill 建成功后，内核数据面 onSkillCreated 钩子会自动登记 asset
-            // + 绑定为 owner agent 的 fixed-asset（visibility 默认 private）。
-            // 前端不再需要额外调 localStorage 存"我的资产"—— 数据源已经是真后端。
+            // After a skill is created, the kernel data plane's onSkillCreated hook automatically registers the asset
+            // + binds it as the owner agent's fixed-asset (visibility defaults to private).
+            // The frontend no longer needs an extra localStorage call to store "my assets" - the data source is already the real backend.
             setShowImport(false);
             void refresh();
           }}
@@ -321,7 +321,7 @@ export default function SkillsPanel({
       )}
       {showFork &&
         (() => {
-          // Fork 弹窗的 skillId/skillName 来源：selectedSkill（列表来自 asset/list-accessible）
+          // Source of the Fork dialog's skillId/skillName: selectedSkill (list comes from asset/list-accessible)
           const source = selectedSkill
             ? { skillId: selectedSkill.skill_id, skillName: selectedSkill.name }
             : null;
@@ -336,7 +336,7 @@ export default function SkillsPanel({
               onClose={() => setShowFork(false)}
               onForked={() => {
                 setShowFork(false);
-                // fork 出的新副本以 `<原名>-fork-<agentId>` 落库，会作为新条目出现
+                // The forked copy is stored as `<original name>-fork-<agentId>` and will appear as a new entry
                 void refresh();
               }}
             />

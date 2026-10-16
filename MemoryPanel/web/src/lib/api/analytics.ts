@@ -1,24 +1,24 @@
 /**
- * api/analytics.ts — 「可观测」查询面 API 客户端。
+ * api/analytics.ts - API client for the "Observability" query surface.
  *
- * 走 Panel 的 /api/v1/analytics/* 透明代理 → 内核 /v3/analytics/*（iwiki 4036925405）。
- * 与 meta 一致：注入 X-Tdai-Service-Id + X-Tdai-User-Key，信封解包复用 base 的
- * unwrapEnvelope（保持与 meta 相同的错误语义）。
+ * Goes through Panel's /api/v1/analytics/* transparent proxy → kernel /v3/analytics/* (iwiki 4036925405).
+ * Same as meta: injects X-Tdai-Service-Id + X-Tdai-User-Key, and envelope unwrapping reuses base's
+ * unwrapEnvelope (keeping the same error semantics as meta).
  *
- * 页面只消费「指标」查询面：config / session-init(summary、timeseries、
- * bypass-reasons) / tool-calls(endpoint-share、top-bodies)。watermark / detail-fetch
- * 属 recall 增量数据接口，不在页面使用范围；spaces（全量 space_id 列表）与
- * 「按登录实例隔离」的数据面语义相悖，已下线。
+ * The page only consumes the "metrics" query surface: config / session-init(summary, timeseries,
+ * bypass-reasons) / tool-calls(endpoint-share, top-bodies). watermark / detail-fetch
+ * are recall incremental-data endpoints, outside the page's scope; spaces (full space_id list) conflicts
+ * with the "isolated per logged-in instance" data-plane semantics and has been removed.
  *
- * 全部接口都是幂等只读查询，统一经 dedupeInFlight 去重：既消除 React 18 StrictMode
- * 开发态 effect 双调用，也避免 60s 定时刷新与手动刷新叠加时的重复请求堆积。
+ * All endpoints are idempotent read-only queries, uniformly deduplicated via dedupeInFlight: this removes React 18 StrictMode
+ * double effect calls in dev, and avoids duplicate requests piling up when the 60s auto-refresh overlaps a manual refresh.
  */
 
 import { ApiError, dedupeInFlight, request, unwrapEnvelope } from './base';
 import { getPanelSession } from '../panelSession';
 import type { MetaEnvelope } from './types';
 
-/** 时间窗（内核 schema 仅接受 1/7/30/90）。 */
+/** Time window (the kernel schema only accepts 1/7/30/90). */
 export type AnalyticsRangeDays = 1 | 7 | 30 | 90;
 
 export interface AnalyticsConfig {
@@ -28,7 +28,7 @@ export interface AnalyticsConfig {
   tables: Record<string, boolean>;
 }
 
-/** 环比对象（渗透率 / bypass 率共用）。 */
+/** Period-over-period object (shared by penetration rate / bypass rate). */
 export interface PctWithDelta {
   current_pct: number;
   previous_pct: number;
@@ -43,7 +43,7 @@ export interface SessionInitSummary {
   total_bridge_calls: number;
 }
 
-/** session-init/timeseries 行：init / 有调用 / bypass 三线。 */
+/** session-init/timeseries row: three lines - init / with calls / bypass. */
 export interface SessionTrendRow {
   day: string;
   init_sessions: number;
@@ -71,7 +71,7 @@ export interface BypassReasonRow {
   pct: number;
 }
 
-/** tool-calls/list 单条调用明细（trace 视图与成员聚合共用）。 */
+/** A single call record from tool-calls/list (shared by the trace view and member aggregation). */
 export interface ToolCallRow {
   timestamp: string;
   session_key: string;
@@ -96,28 +96,28 @@ export interface ToolCallListResult {
   items: ToolCallRow[];
 }
 
-/** tool-calls/list 过滤条件（内核支持的四个维度）。 */
+/** tool-calls/list filters (the four dimensions the kernel supports). */
 export interface ToolCallListQuery extends AnalyticsQueryBody {
   kind?: 'bridge_call' | 'model_intent';
   user_id?: string;
   bridge_source?: string;
-  /** 模糊匹配（内核用 LIKE %value%）。 */
+  /** Fuzzy match (the kernel uses LIKE %value%). */
   executed_endpoint?: string;
   offset?: number;
   limit?: number;
 }
 
-/** 面板侧聚合时单次拉取的页大小（内核 schema 上限 200）。 */
+/** Page size per fetch for panel-side aggregation (kernel schema max 200). */
 export const TOOL_CALL_PAGE_MAX = 200;
 
-// ── usage（成本视角：token / credit / 模型分布）──────────────────────────
+// ── usage (cost view: token / credit / model distribution) ──────────────────────────
 
 /**
- * usage/summary 聚合。
+ * usage/summary aggregate.
  *
- * ⚠️ `cache_hit_rate` 在内核 SQL 中是 `sum(cache_hit_tokens)*100/nullIf(sum(prompt_tokens),0)`,
- * prompt_tokens 总和为 0 时返回 **null**（无法计算），与「命中率 0%」语义不同，
- * 因此这里保留 null 而不归一为 0。同理：无数据时内核返回 `{}`，各字段为 undefined。
+ * ⚠️ In the kernel SQL `cache_hit_rate` is `sum(cache_hit_tokens)*100/nullIf(sum(prompt_tokens),0)`,
+ * which returns **null** (cannot be computed) when total prompt_tokens is 0 - different from a "0% hit rate",
+ * so null is kept here rather than normalized to 0. Likewise: with no data the kernel returns `{}` and every field is undefined.
  */
 export interface UsageSummary {
   total_requests: number;
@@ -125,7 +125,7 @@ export interface UsageSummary {
   total_completion_tokens: number;
   total_tokens: number;
   total_cache_hit_tokens: number;
-  /** null = 无 prompt token，无法计算 */
+  /** null = no prompt tokens, cannot be computed */
   cache_hit_rate: number | null;
   total_credit: number;
   total_credit_saved: number;
@@ -151,11 +151,11 @@ export interface UsageModelRow {
   requests: number;
   total_tokens: number;
   credit: number;
-  /** null = 全局请求数为 0，无法计算占比 */
+  /** null = global request count is 0, share cannot be computed */
   pct_requests: number | null;
-  /** null = 全局 credit 为 0，无法计算占比 */
+  /** null = global credit is 0, share cannot be computed */
   pct_credit: number | null;
-  /** 由其他模型路由到该模型的请求数（routed_from 非空）。 */
+  /** Number of requests routed to this model from other models (routed_from non-empty). */
   routed_to_count: number;
 }
 
@@ -172,12 +172,12 @@ export interface UsageLogRow {
   cache_hit_tokens: number;
   credit: number;
   credit_saved: number;
-  /** 非空表示该请求由此模型路由而来。 */
+  /** Non-empty means this request was routed from this model. */
   routed_from: string;
   stream: boolean;
 }
 
-/** usage_raw 异常上报原因（内核 zod 枚举，传其他值会 400）。 */
+/** usage_raw anomaly report reason (kernel zod enum; any other value returns 400). */
 export const USAGE_RAW_REASONS = [
   'non_tokenhub',
   'unknown_model',
@@ -194,7 +194,7 @@ export interface UsageRawRow {
   key_id: string;
   user_id: string;
   session_key: string;
-  /** 原始上报载荷（字符串或 JSON 文本）。 */
+  /** Raw report payload (string or JSON text). */
   usage: string;
   reason: string;
   space_id: string;
@@ -220,7 +220,7 @@ export interface PagedResult<T> {
   items: T[];
 }
 
-/** 面板请求统一时间窗 body。 */
+/** Unified time-window body for panel requests. */
 export interface AnalyticsQueryBody {
   days?: AnalyticsRangeDays;
   space_id?: string;
@@ -238,11 +238,11 @@ function sessionHeaders(): Record<string, string> {
 }
 
 /**
- * 调用 analytics action 并解包信封。
+ * Call an analytics action and unwrap the envelope.
  *
- * body 仅在 POST 时传入（GET action 传 undefined，request 不会附加 body —— 内核
- * config / spaces 声明为 GET，带 body 会被代理层判为 method 不符）。
- * content-type 由 request() 在有 body 时自动设置，此处不重复设置。
+ * body is only passed for POST (GET actions pass undefined, and request won't attach a body - the kernel
+ * declares config / spaces as GET, and a body would make the proxy layer reject it as a method mismatch).
+ * content-type is set automatically by request() when there is a body; not set again here.
  */
 async function call<T>(
   method: 'GET' | 'POST',
@@ -261,7 +261,7 @@ async function call<T>(
   });
 }
 
-/** CH 数值列经 HTTP JSON 后可能是字符串（UInt64），统一归一为 number。 */
+/** CH numeric columns may be strings after HTTP JSON (UInt64); normalize to number. */
 const toNumber = (v: unknown): number => {
   const n = Number(v ?? 0);
   return Number.isFinite(n) ? n : 0;
@@ -270,11 +270,11 @@ const toNumber = (v: unknown): number => {
 const toText = (v: unknown): string => (v === null || v === undefined ? '' : String(v));
 
 /**
- * 保留 null 语义的数值归一。
+ * Numeric normalization that preserves null semantics.
  *
- * 内核 SQL 里用 `nullIf(divisor, 0)` 的比率列（cache_hit_rate / pct_requests /
- * pct_credit）在分母为 0 时返回 null——表示「无法计算」，与「等于 0」不同。
- * 这里必须保留 null，交由 UI 显示占位符，不能悄悄变成 0 造成误读。
+ * Ratio columns using `nullIf(divisor, 0)` in kernel SQL (cache_hit_rate / pct_requests /
+ * pct_credit) return null when the divisor is 0 - meaning "cannot be computed", not "equals 0".
+ * null must be kept here so the UI shows a placeholder, rather than silently becoming 0 and misleading.
  */
 const toNullableNumber = (v: unknown): number | null => {
   if (v === null || v === undefined || v === '') return null;
@@ -282,7 +282,7 @@ const toNullableNumber = (v: unknown): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
-/** CH 的布尔列可能是 0/1、'0'/'1' 或 true/false。 */
+/** CH boolean columns may be 0/1, '0'/'1' or true/false. */
 const toBool = (v: unknown): boolean => {
   if (typeof v === 'boolean') return v;
   if (typeof v === 'number') return v !== 0;
@@ -291,12 +291,12 @@ const toBool = (v: unknown): boolean => {
 };
 
 export const analyticsApi = {
-  /** 内核 CH 配置状态探测（GET）。 */
+  /** Kernel CH config status probe (GET). */
   config: (): Promise<AnalyticsConfig> => call('GET', 'config'),
 
-  // 注：不提供 spaces（/analytics/spaces 全量 space_id 列表）——该接口返回共享
-  // CH 中全部实例的 space_id，与可观测页「按登录实例隔离」的数据面语义相悖，
-  // 页面 Space 固定为 auth.instance_id，不再消费该端点。
+  // Note: spaces (/analytics/spaces full space_id list) is not provided - that endpoint returns the space_id
+  // of every instance in the shared CH, conflicting with the observability page's "isolated per logged-in instance" semantics;
+  // the page Space is fixed to auth.instance_id and no longer consumes that endpoint.
 
   sessionSummary: (body: AnalyticsQueryBody): Promise<SessionInitSummary> =>
     call('POST', 'session-init/summary', body),
@@ -356,7 +356,7 @@ export const analyticsApi = {
     }));
   },
 
-  /** 工具调用明细（trace 视图）。内核 ORDER BY timestamp DESC。 */
+  /** Tool call records (trace view). Kernel ORDER BY timestamp DESC. */
   toolCallList: async (query: ToolCallListQuery): Promise<ToolCallListResult> => {
     const data = await call<{
       total: number;
@@ -388,13 +388,13 @@ export const analyticsApi = {
   },
 
   /**
-   * 连续拉取多页调用明细，供面板侧按成员聚合。
+   * Fetch multiple pages of call records in sequence for panel-side per-member aggregation.
    *
-   * 内核未提供「按 user 聚合」的展示接口（watermark 是给 recall 增量链路用的，
-   * 结构不适合展示），且本期不改 Core，故只能在面板侧聚合。
+   * The kernel has no display endpoint for "aggregate by user" (watermark is for the recall incremental pipeline,
+   * its structure is unsuitable for display), and Core isn't changed in this phase, so aggregation must happen panel-side.
    *
-   * ⚠️ 这是**抽样**而非全量：单页上限 200，最多取 maxPages 页。调用方必须把
-   * 返回的 sampled/total 透出到 UI，不能把抽样结果当全量口径展示。
+   * ⚠️ This is a **sample**, not the full set: max 200 per page, at most maxPages pages. Callers must surface
+   * the returned sampled/total in the UI and must not present sampled results as full totals.
    */
   toolCallSample: async (
     body: AnalyticsQueryBody,
@@ -422,9 +422,9 @@ export const analyticsApi = {
     return { rows, total, truncated };
   },
 
-  // ── usage（成本视角）────────────────────────────────────────────────
+  // ── usage (cost view) ────────────────────────────────────────────────
 
-  /** token / credit 总量聚合。无数据时内核返回 {}，此处归一为全 0 + 比率 null。 */
+  /** Aggregate token / credit totals. With no data the kernel returns {}; normalized here to all 0 + null ratios. */
   usageSummary: async (body: AnalyticsQueryBody): Promise<UsageSummary> => {
     const d = await call<Record<string, unknown>>('POST', 'usage/summary', body);
     return {
@@ -478,7 +478,7 @@ export const analyticsApi = {
     }));
   },
 
-  /** 单次请求级用量明细（支持 user_id / model_id 过滤）。 */
+  /** Per-request usage records (supports user_id / model_id filters). */
   usageList: async (query: UsageListQuery): Promise<PagedResult<UsageLogRow>> => {
     const d = await call<{
       total: number;
@@ -510,9 +510,9 @@ export const analyticsApi = {
   },
 
   /**
-   * 计费异常上报明细（usage_raw）。
+   * Billing anomaly report records (usage_raw).
    *
-   * reason 必须取自 USAGE_RAW_REASONS —— 内核用 zod enum 校验，传其他值直接 400。
+   * reason must come from USAGE_RAW_REASONS - the kernel validates with a zod enum and any other value returns 400.
    */
   usageRawList: async (query: UsageRawListQuery): Promise<PagedResult<UsageRawRow>> => {
     const d = await call<{

@@ -8,7 +8,7 @@ import { getMetadataClient } from "../../meta/client.js";
 import { resolveFixedAssetCtxs, type FixedAssetCtx } from "./tdai-fixed-asset.js";
 
 /**
- * L2/L3 注入（按 openclaw / hermes 官方做法重构）：
+ * L2/L3 注入（按 openclaw 官方做法重构）：
  *   - L3 (persona) → 注入完整内容（稳定且通常较短，作为长期画像）
  *   - L2 (scenarios) → **只注入 Scene Navigation 索引（路径列表 + summary）**，
  *     不预读全文。LLM 需要细节时主动调 `tdai_read_scene` 工具按 path 拉取。

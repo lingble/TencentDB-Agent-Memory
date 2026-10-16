@@ -51,7 +51,7 @@ const CC_MAX_OPTIONS = CC_MAX_OPTIONS_SHARED;
  * 必须包含 `thinking` content block，否则返回：
  *   `400 The content[].thinking in the thinking mode must be passed back to the API`
  *
- * 同款坑在 opencode #24803 / claude-code-router #1378 / hermes-agent #17992 /
+ * 同款坑在 opencode #24803 / claude-code-router #1378 /
  * litellm #31439 都复现过。DeepSeek 官方文档也明说：带 tools 时 reasoning_content
  * 必须在后续请求里回传，Anthropic 协议下同理指 thinking block。
  *

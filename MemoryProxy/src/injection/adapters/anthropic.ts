@@ -191,14 +191,13 @@ export class AnthropicAdapter implements ProtocolAdapter {
       name: (raw.name as string) ?? "unknown",
       description: (raw.description as string) ?? "",
       parameters: (raw.input_schema as Record<string, unknown>) ?? {},
+      raw,
     };
     if (raw.cache_control !== undefined) {
       tool.cacheControl = raw.cache_control;
     }
     return tool;
   }
-
-  // ── Private: serialize helpers ──────────────────────────────────────────────
 
   private serializeSystemMessage(msg: ContextMessage): unknown {
     const textBlocks = msg.blocks.filter((b) => b.type === "text");
@@ -281,14 +280,39 @@ export class AnthropicAdapter implements ProtocolAdapter {
   }
 
   private serializeTool(tool: AgentTool): Record<string, unknown> {
+    const raw = tool.raw;
+    // Server tools (web_search_*, bash_*, text_editor_*, …) carry a non-custom
+    // `type` and no input_schema: pass them through untouched apart from
+    // cache_control, which the pipeline may have moved.
+    if (raw && typeof raw.type === "string" && raw.type !== "custom") {
+      const { cache_control: _cc, ...rest } = raw;
+      const out: Record<string, unknown> = { ...rest };
+      if (tool.cacheControl !== undefined) out.cache_control = tool.cacheControl;
+      return out;
+    }
+    const { cache_control: _cc, ...rest } = raw ?? {};
     const out: Record<string, unknown> = {
+      ...rest,
       name: tool.name,
       description: tool.description,
-      input_schema: tool.parameters,
+      input_schema: normalizeInputSchema(tool.parameters),
     };
     if (tool.cacheControl !== undefined) {
       out.cache_control = tool.cacheControl;
     }
     return out;
   }
+}
+
+/**
+ * Anthropic rejects custom tools whose input_schema lacks `type: "object"`
+ * (400 `tools.N.custom.input_schema.type: Field required`).
+ */
+export function normalizeInputSchema(schema: unknown): Record<string, unknown> {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
+    return { type: "object", properties: {} };
+  }
+  const s = schema as Record<string, unknown>;
+  if (s.type === undefined) return { type: "object", properties: {}, ...s };
+  return s;
 }

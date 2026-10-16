@@ -1,15 +1,30 @@
 /**
  * openclaw AgentStrategy (addendum §4.3 契约补齐)。
  *
- * 与 hermes 完全对称 —— addendum 原文把两者并列在 `HEADER_ONLY_AGENTS` 里
- * (session/preset.ts:32-36), `isHeaderOnlyAgent()` 对二者行为一致:
- *   > - `hermes`   — anthropic, no ask-user tool available
- *   > - `openclaw` — anthropic, same as hermes
+ * addendum §4.3 原文:
+ *   > `HEADER_ONLY_AGENTS` 与 `isHeaderOnlyAgent(agentSource)` 是**跨 stage 硬约束**,
+ *   > 不是可选特化。`AgentStrategy` 里表达为:
+ *   >   - `supportsSessionForm: false`
+ *   >   - `bypassOnPresetFail: true`
  *
- * 补齐原因、协议、行为、以及"契约完善而非行为修复"的说明均同 hermes.ts,
- * 详见该文件头注释。
- * 独立成文件 (而非复用 hermes 实例) 是为了保持与其余 agent 一致的结构 ——
- * 未来任一方做抓包特化时不会牵连另一方。
+ * openclaw 列在 `HEADER_ONLY_AGENTS` 里 (session/preset.ts), 与 pi 对称:
+ *   > - `openclaw` — anthropic, no ask-user tool available
+ *
+ * ⚠️ 契约完善, 非行为修复: 补齐前后运行时行为一致。
+ *   - 那两个字段当前无消费点 (原消费点 `stages/session-init.ts` 已在 Round 18
+ *     被 `stages/session-init-orchestrate.ts` 取代并删除), 见 types.ts 字段 JSDoc
+ *   - 真正生效的 header-only bypass 在 `session/codebuddy/init.ts` 的
+ *     `isHeaderOnlyAgent(agentSource)` 分支, 按 `HEADER_ONLY_AGENTS` Set 判定,
+ *     与 strategy 无关
+ *   - strategy 唯一被真实消费的字段是 `stageGates`, 落 default 时
+ *     也是 `STAGE_PRESETS.full`, 取值一致
+ *
+ * 协议: openclaw 走 anthropic /v1/messages (supported-agents.ts 标注
+ * protocol="anthropic")。archive 的 protocol 由 runner 以字面量传给 stageArchive,
+ * strategy 上不持有该字段。
+ *
+ * 行为: 复用 defaultAdapter 的 classifyRequest/extractUserText (未做抓包特化);
+ * agentKind 显式标 "openclaw" (AgentKind 联合类型已收录, 见 agent-adapters/types.ts)。
  */
 
 import { defaultAdapter } from "../../../agent-adapters/default.js";

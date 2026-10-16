@@ -1,6 +1,6 @@
 /**
- * useCodeSources —— Code 资产页的全部状态与数据逻辑。
- * 组件层只保留 JSX 渲染，状态 / 数据逻辑集中在此。
+ * useCodeSources — all state and data logic for the Code asset page.
+ * The component layer only keeps JSX rendering; state / data logic is centralized here.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -18,7 +18,7 @@ export function useCodeSources() {
   const { t } = useTranslation();
   const [sources, setSources] = useState<CodeGraphDetail[]>([]);
   const [loading, setLoading] = useState(false);
-  // 默认展示 Agent 资产（fixed），避免用户误以为自己的资产在「团队资产」里
+  // Show Agent assets (fixed) by default, so users don't mistakenly think their own assets are under "Team assets"
   const [scopeTab, setScopeTab] = useState<ScopeTab>('fixed');
   const [keyword, setKeyword] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -35,13 +35,13 @@ export function useCodeSources() {
   const [formBranch, setFormBranch] = useState('main');
   const [submitting, setSubmitting] = useState(false);
 
-  // 外部来源（如工蜂）：'' = 公开仓
+  // External source (e.g. Gongfeng): '' = public repo
   const [formSourceType, setFormSourceType] = useState('');
   const [sourceProviders, setSourceProviders] = useState<SourceProviderMeta[]>([]);
   /**
-   * 弹窗内临时填写的凭据字段值（按 provider.form_fields 动态存）；
-   * 仅内存，提交后立即清空，绝不落 localStorage。
-   * key = 字段 name（`secret` / `username` / 未来其它）。
+   * Credential field values temporarily entered in the dialog (stored dynamically per provider.form_fields);
+   * in memory only, cleared immediately after submit, never persisted to localStorage.
+   * key = field name (`secret` / `username` / others in the future).
    */
   const [formCredential, setFormCredential] = useState<Record<string, string>>({});
   const setCredentialField = (name: string, value: string) =>
@@ -65,8 +65,8 @@ export function useCodeSources() {
   const { activeTeamId, activeTeam } = useTeams();
   const auth = readAuth();
   const currentUser = auth?.user_id ?? '';
-  // 固定资产 tab 只列自己 owner 的 agent（与 ChatMemory / Skills 面板一致，
-  // 也符合文档 §4.2 权限规则：agent-fixed 只允许查看 caller 自己 owner 的 agent）。
+  // The Fixed assets tab lists only agents owned by the current user (consistent with the ChatMemory / Skills panels,
+  // and with the §4.2 permission rule in the docs: agent-fixed only allows viewing agents owned by the caller).
   const { agents: allAgents } = useAgents(activeTeamId);
   const teamAgents = useMemo(
     () =>
@@ -75,7 +75,7 @@ export function useCodeSources() {
         .map((a) => ({ id: a.agent_id, name: a.name })),
     [allAgents, currentUser],
   );
-  // fixed tab 下选中的 agent_id
+  // agent_id selected under the fixed tab
   const [agentFilter, setAgentFilter] = useState<string>('');
   const [fixedBoundIds, setFixedBoundIds] = useState<Set<string>>(new Set());
 
@@ -108,13 +108,13 @@ export function useCodeSources() {
   }, [scopeTab, fetchFixedBindings]);
 
   const displaySources = useMemo(() => {
-    // inFlight = 刚注册或刚点过「同步」的仓库，其状态由 code.get 轮询实时刷新。
-    // 同 id 时以 inFlight 为准覆盖 sources：否则详情头只会显示 202 那一刻
-    // teamAssets 快照里的状态，轮询结果永远反映不到界面上。
+    // inFlight = repos just registered or just "Sync"-ed, whose status is refreshed live by code.get polling.
+    // For the same id inFlight overrides sources: otherwise the detail header would only show the status from the
+    // teamAssets snapshot at the 202 moment, and polling results would never reach the UI.
     if (inFlight.length === 0) return sources;
     const inFlightMap = new Map(inFlight.map((x) => [x.code_graph_id, x]));
     const sourceIds = new Set(sources.map((s) => s.code_graph_id));
-    // 还没进 teamAssets 的（刚注册、meta 尚未登记）排在最前占位
+    // Items not yet in teamAssets (just registered, meta not yet recorded) are placed first as placeholders
     const extras = inFlight.filter((x) => x.code_graph_id && !sourceIds.has(x.code_graph_id));
     return [...extras, ...sources.map((s) => inFlightMap.get(s.code_graph_id) ?? s)];
   }, [sources, inFlight]);
@@ -130,7 +130,7 @@ export function useCodeSources() {
     return displaySources;
   }, [displaySources, scopeTab, agentFilter, fixedBoundIds]);
 
-  // 统计只跟随当前资产范围，避免搜索或状态筛选让概览数据失真。
+  // Stats follow only the current asset scope, so search or status filters don't distort the overview numbers.
   const stats = useMemo(
     () => ({
       total: scopeSources.length,
@@ -171,9 +171,9 @@ export function useCodeSources() {
   const [exploring, setExploring] = useState(false);
   const [exploreResult, setExploreResult] = useState('');
 
-  // 请求序号防竞态：快速切换 tab 时，先发的请求可能后返回，
-  // 旧 tab 的数据会覆盖新 tab 的数据。每次 fetch 递增序号，
-  // 响应回来时校验序号是否仍是最新，不是就丢弃。
+  // Request sequence number to prevent races: when switching tabs quickly, an earlier request may return later,
+  // and the old tab's data would overwrite the new tab's. Each fetch increments the sequence number,
+  // and on response we check that it's still the latest; if not, discard it.
   const fetchSeqRef = useRef(0);
 
   const fetchSources = useCallback(async () => {
@@ -184,14 +184,14 @@ export function useCodeSources() {
     }
     const seq = ++fetchSeqRef.current;
     setLoading(true);
-    // 立即清空旧数据 —— 否则切 tab 时会先看到上一个 tab 的列表，
-    // 新数据到了才突然替换，视觉上就是"闪一下"。
+    // Clear old data immediately; otherwise when switching tabs the previous tab's list shows first
+    // and is suddenly replaced when new data arrives, which visually looks like a "flash".
     setSources([]);
     try {
-      // 资产统一为团队维度（visibility=team），无 private/我的资产概念。
-      // fixed tab 也是拿全量 team 资产，再按 fixedBoundIds 过滤。
+      // Assets are uniformly team-scoped (visibility=team); there is no private/my-assets concept.
+      // The fixed tab also fetches all team assets, then filters by fixedBoundIds.
       const data = await knowledgeApi.code.teamAssets(activeTeamId);
-      if (seq !== fetchSeqRef.current) return; // 已被后续请求取代
+      if (seq !== fetchSeqRef.current) return; // superseded by a later request
       setSources(Array.isArray(data) ? data : []);
     } catch (e: unknown) {
       if (seq !== fetchSeqRef.current) return;
@@ -202,7 +202,7 @@ export function useCodeSources() {
     }
   }, [activeTeamId, scopeTab]);
 
-  // 触发 fetchSources：依赖原始参数 + fetchSources，并用 key 去重防止短时间内重复触发。
+  // Trigger fetchSources: depends on the raw params + fetchSources, with a key to dedupe repeated triggers in a short window.
   const fetchKeyRef = useRef<string>('');
   useEffect(() => {
     const key = `${activeTeamId}|${scopeTab}`;
@@ -211,9 +211,9 @@ export function useCodeSources() {
     void fetchSources();
   }, [activeTeamId, scopeTab, fetchSources]);
 
-  // inFlight 的 ref 镜像：poll 闭包通过 ref 读取最新值，
-  // 避免把 inFlight 放进 effect 依赖——否则每次 setInFlight（即使内容不变、
-  // 只是数组引用变了）都会重新触发 effect → 立即 poll → 又 setInFlight → 死循环。
+  // Ref mirror of inFlight: the poll closure reads the latest value through the ref,
+  // avoiding putting inFlight in the effect deps; otherwise every setInFlight (even with unchanged content,
+  // just a new array reference) would re-trigger the effect -> immediate poll -> setInFlight again -> infinite loop.
   const inFlightRef = useRef<CodeGraphDetail[]>([]);
   inFlightRef.current = inFlight;
   const hasInFlight = inFlight.length > 0;
@@ -233,8 +233,8 @@ export function useCodeSources() {
             try {
               await knowledgeApi.code.registerMeta(activeTeamId, detail.code_graph_id);
             } catch (e: unknown) {
-              // 幂等：asset 已存在 / 409 → 忽略；其它真错报出来便于排查
-              // （callback S2S 是主力，这里只是兜底，但失败要可见）
+              // Idempotent: asset already exists / 409 -> ignore; other real errors are surfaced for troubleshooting
+              // (the callback S2S is the primary path, this is only a fallback, but failures must be visible)
               const msg = e instanceof Error ? e.message : String(e);
               if (!/already|exist|409|registered|ok/i.test(msg)) {
                 tea.notify.error(t('code.notify.metaFailed', { msg }));
@@ -243,7 +243,7 @@ export function useCodeSources() {
             toRemove.push(detail.code_graph_id);
             void fetchSources();
           } else {
-            // 只在状态真正变化时才记录更新，避免无意义的 setInFlight 触发重渲染
+            // Only record an update when the status actually changes, to avoid pointless setInFlight re-renders
             if (detail.status !== item.status) updates.push(detail);
           }
         } catch {
@@ -292,10 +292,10 @@ export function useCodeSources() {
   }
 
   /**
-   * 打开注册弹窗时加载来源清单。失败静默降级（表单退化为仅公开仓）。
+   * Load the source list when the register dialog opens. Fails silently with degradation (the form falls back to public repos only).
    *
-   * 不再查"当前用户已配置的来源"——凭据挂在**资源**上，注册前无 resource_id，
-   * 该概念已不成立；注册后如果失败，用户可在列表页对具体资源重新配置。
+   * We no longer query "sources configured by the current user": credentials are attached to the **resource**, and before registration there is no resource_id,
+   * so that concept no longer holds; if registration fails, the user can reconfigure the specific resource from the list page.
    */
   const openRegister = useCallback(async () => {
     setShowRegister(true);
@@ -343,8 +343,8 @@ export function useCodeSources() {
       return;
     }
     const isSsh = isSshGitUrl(repo);
-    // 私有仓（HTTPS 平台）：按 provider.form_fields 校验必填字段。
-    // SSH 来源 form_fields 为空数组 → 天然跳过令牌校验。
+    // Private repo (HTTPS platform): validate required fields per provider.form_fields.
+    // SSH source has empty form_fields → token validation is naturally skipped.
     const provider = sourceProviders.find((p) => p.id === formSourceType);
     if (provider && !isSsh) {
       for (const f of provider.form_fields) {
@@ -356,9 +356,9 @@ export function useCodeSources() {
     }
     setSubmitting(true);
     try {
-      // 私有仓：create 时把凭据一并传过去，KS 在入队建图前先落凭据，
-      // 避免「create 立即 clone、凭据尚未写入」的时序窗口（否则私有仓必 401）。
-      // SSH 来源不传 secret（后端对该 provider 也不要求），只传 provider_id 表明走 SSH。
+      // Private repo: pass the credentials along at create time, so KS persists them before enqueuing the graph build,
+      // avoiding the race window of "create clones immediately, credentials not yet written" (otherwise private repos always 401).
+      // SSH sources send no secret (the backend doesn't require one for that provider), only provider_id to indicate SSH.
       const secret = (formCredential.secret ?? '').trim();
       const username = (formCredential.username ?? '').trim();
       const detail = await knowledgeApi.code.create({
@@ -416,9 +416,9 @@ export function useCodeSources() {
   const handleSync = async (cgId: string) => {
     try {
       await knowledgeApi.code.sync(cgId);
-      // sync 是异步的，202 只代表已入队。这里把该仓库放回 inFlight（与 handleRegister 对齐），
-      // 交给上面的 GET 轮询直到 status 回到 ready；否则只会拉一次 teamAssets 快照，
-      // 详情头会永远停在那一刻的「构建中」。
+      // sync is async; 202 only means it's been enqueued. Put the repo back into inFlight (consistent with handleRegister),
+      // and let the GET polling above run until status returns to ready; otherwise we'd only fetch one teamAssets snapshot
+      // and the detail header would stay stuck at "Building" from that moment.
       const current =
         sources.find((s) => s.code_graph_id === cgId) ??
         inFlightRef.current.find((x) => x.code_graph_id === cgId);
@@ -447,9 +447,9 @@ export function useCodeSources() {
     if (!ok) return;
     try {
       await knowledgeApi.code.delete(cgId);
-      // 乐观更新：立即从本地列表移除。后端删除是最终一致的，删除刚成功时再拉 teamAssets
-      // 可能仍返回该仓库，导致列表不变、需手动刷新页面才消失。这里先本地摘除，
-      // fetchSources 仅作兜底对齐。
+      // Optimistic update: remove from the local list immediately. Backend deletion is eventually consistent; refetching teamAssets right after
+      // a successful delete may still return the repo, leaving the list unchanged until a manual page refresh. So remove it locally first,
+      // and fetchSources only serves as a fallback reconciliation.
       setSources((prev) => prev.filter((x) => x.code_graph_id !== cgId));
       setInFlight((prev) => prev.filter((x) => x.code_graph_id !== cgId));
       if (selectedCodeAsset?.cgId === cgId) setSelectedCodeAsset(null);
@@ -535,7 +535,7 @@ export function useCodeSources() {
     setFormBranch,
     submitting,
     setSubmitting,
-    // 外部来源
+    // External source
     formSourceType,
     setFormSourceType,
     sourceProviders,

@@ -21,8 +21,7 @@ import type { TeamOption } from "./types.js";
  * form UI** to fall back on:
  *
  *   - `pi`       — openai-chat, no `ask_followup_question` tool in body.tools
- *   - `hermes`   — anthropic, no ask-user tool available
- *   - `openclaw` — anthropic, same as hermes
+ *   - `openclaw` — anthropic, no ask-user tool available
  *
  * For these clients, `handleSessionInit` MUST NOT emit a fake tool_call form
  * on preset failure/mismatch — the client renders unknown tool_use as an
@@ -30,7 +29,6 @@ import type { TeamOption } from "./types.js";
  * `mem:session-reset` pre-hooks in `handler.ts` / `anthropicHandler.ts`.
  */
 export const HEADER_ONLY_AGENTS: ReadonlySet<string> = new Set([
-  "hermes",
   "openclaw",
   "pi",
 ]);

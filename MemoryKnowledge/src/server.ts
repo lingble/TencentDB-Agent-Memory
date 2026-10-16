@@ -71,9 +71,9 @@ export function createApp() {
 
   // /v3 prefix applied once here — routes define paths without prefix
   const api = new Hono();
-  // 服务间鉴权：serviceKey 非空时，除只读白名单外的 /v3 端点均需
-  // Bearer 鉴权（fail-closed）；key 为空则全放行（向后兼容）。
-  // /health、/docs、/openapi.json 挂在 api 之外，保持开放。
+  // Service-to-service auth: when serviceKey is non-empty, all /v3 endpoints except the read-only allowlist
+  // require Bearer auth (fail-closed); an empty key allows everything (backward compatible).
+  // /health, /docs, /openapi.json are mounted outside api and stay open.
   api.use("*", createServiceAuthMiddleware(config.auth, config.apiPrefix));
   // Only Agent tool executions are usage telemetry; health/admin/ingest remain excluded.
   api.use("/tools/call", createKnowledgeTelemetryMiddleware(knowledgeTelemetry));
@@ -101,13 +101,13 @@ export function createApp() {
     llmBindingStore: knowledgeModule.llmBindingStore,
   }));
 
-  // auto-sync admin — 定时同步调度器状态查询 + 手动触发
+  // auto-sync admin — scheduled sync scheduler status query + manual trigger
   api.route("/", createAutoSyncRoutes({
     scheduler: knowledgeModule.autoSyncScheduler,
     config: knowledgeModule.autoSyncConfig,
   }));
 
-  // source-credential / source-provider — 外部知识源令牌 + 来源列表
+  // source-credential / source-provider — external knowledge source tokens + source list
   api.route("/source-credential", createSourceCredentialRoutes({
     credentialStore: knowledgeModule.credentialStore,
     store: knowledgeModule.store,
@@ -117,12 +117,12 @@ export function createApp() {
     wikiRegistry: knowledgeModule.wikiSourceRegistry,
   }));
 
-  // ssh-key — 每用户 SSH 密钥对（SSH 仓库 clone 用）
+  // ssh-key — per-user SSH key pair (used for cloning SSH repos)
   api.route("/ssh-key", createSshKeyRoutes({
     sshKeyStore: knowledgeModule.sshKeyStore ?? sshKeyStore,
   }));
 
-  // wiki-source — 外部 wiki 列文档 / 导入（不触发 ingest）
+  // wiki-source — list / import external wiki documents (does not trigger ingest)
   api.route("/wiki-source", createWikiSourceRoutes({
     registry: knowledgeModule.wikiSourceRegistry,
     credentialStore: knowledgeModule.credentialStore,
@@ -163,7 +163,7 @@ async function startServer(): Promise<void> {
   log.info(`DB path: ${config.dbPath}`);
   log.info(`API prefix: ${config.apiPrefix}`);
   log.info(`ClickHouse telemetry: ${config.clickhouse.enabled ? "enabled" : "disabled"}`);
-  // Security posture：空 key 只 warn 不拒启（向后兼容），与 Core gateway 的默认开放语义一致。
+  // Security posture: an empty key only warns and does not refuse to start (backward compatible), consistent with the Core gateway's default-open semantics.
   if (config.auth.serviceKey) {
     log.info("Service auth: enabled (KNOWLEDGE_SERVICE_KEY) — write/admin endpoints require Bearer");
   } else {

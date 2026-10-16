@@ -1,12 +1,12 @@
 /**
- * api/tasks.ts — Task + ParticipationLog（meta/task/* + meta/task-agent/* + meta/participation-log/*）。
+ * api/tasks.ts — Task + ParticipationLog (meta/task/* + meta/task-agent/* + meta/participation-log/*).
  */
 import { getPanelSession } from '../panelSession';
 import { metaPost, metaListAll, getCurrentUser, request, ApiError } from './base';
 import type { MetaEnvelope } from './types';
 
 export type TaskStatus = 'running' | 'completed';
-/** 来源**大类**，与后端对齐；具体来源读 metadata_json.external.provider。 */
+/** Source **category**, aligned with the backend; the concrete source is read from metadata_json.external.provider. */
 export type TaskSourceType = 'manual' | 'external' | 'other';
 
 export interface BackendTask {
@@ -39,10 +39,10 @@ export interface BackendTaskWithAgents extends BackendTask {
 }
 
 export const tasksApi = {
-  /** 列出 team 下所有 task */
+  /** List all tasks under a team */
   list: (teamId: string) => metaListAll<BackendTask>('task/list', { team_id: teamId }),
 
-  /** 获取 task 详情（含 linked agents） */
+  /** Get task details (including linked agents) */
   get: async (taskId: string) => {
     const task = await metaPost<BackendTask>('task/get', { task_id: taskId });
     const agents = await metaListAll<BackendTaskAgent>('task-agent/list', { task_id: taskId });
@@ -50,11 +50,11 @@ export const tasksApi = {
   },
 
   /**
-   * 批量拉取 team 下 task 及其 linked agents（Panel 层聚合接口）。
+   * Batch-fetch tasks under a team with their linked agents (Panel-layer aggregation endpoint).
    *
-   * 后端分页：传 limit + offset，Panel 透传给内核 task/list，
-   * 内核只返回当前页的 task + 全量 total。Panel 再并行补齐 linked_agents。
-   * 前端只拿到当前页的数据，内存和渲染都只处理一页。
+   * Backend pagination: pass limit + offset; the Panel forwards them to the kernel task/list,
+   * and the kernel returns only the current page's tasks + the overall total. The Panel then fills in linked_agents in parallel.
+   * The frontend gets only the current page's data, so memory and rendering only handle one page.
    */
   listWithAgents: async (
     teamId: string,
@@ -84,7 +84,7 @@ export const tasksApi = {
     return { items: envelope.data?.items ?? [], total: envelope.data?.total ?? 0 };
   },
 
-  /** 创建 task */
+  /** Create a task */
   create: async (
     teamId: string,
     data: {
@@ -109,7 +109,7 @@ export const tasksApi = {
     });
   },
 
-  /** 更新 task（title / status / description / risk_level / source_url） */
+  /** Update a task (title / status / description / risk_level / source_url) */
   update: (
     taskId: string,
     data: Partial<{
@@ -121,12 +121,12 @@ export const tasksApi = {
     }>
   ) => metaPost<BackendTask>('task/update', { task_id: taskId, ...data }),
 
-  /** 删除 task（meta task/delete，字段为 task_ids 数组） */
+  /** Delete tasks (meta task/delete, field is the task_ids array) */
   delete: async (taskId: string) => {
     await metaPost<{ deleted_ids: string[] }>('task/delete', { task_ids: [taskId] });
   },
 
-  /** 关联 agent */
+  /** Link an agent */
   linkAgent: (taskId: string, agentId: string, roleInTask?: string) =>
     metaPost<BackendTaskAgent>('task-agent/link', {
       task_id: taskId,
@@ -134,20 +134,20 @@ export const tasksApi = {
       role_in_task: roleInTask,
     }),
 
-  /** 解除 agent 关联 */
+  /** Unlink an agent */
   unlinkAgent: async (taskId: string, agentId: string) => {
     await metaPost<{ ok: boolean }>('task-agent/unlink', { task_id: taskId, agent_id: agentId });
   },
 };
 
-// ========================= Participation Logs（meta/participation-log/*）=========================
+// ========================= Participation Logs (meta/participation-log/*) =========================
 //
-// Session 启动时会 append 一条 (team, task, agent, user) 事件；看板据此
-// 展示"实际参与 User / Agent"。语义与 `task-agent/link`（人工声明关系）互补：
-//   - `linked_agents` = 意图（谁应该干这个 task）
-//   - participation_log = 观测（谁实际起过 session）
+// On session start an (team, task, agent, user) event is appended; the board uses it to
+// show "Participating Users / Agents". The semantics complement `task-agent/link` (manually declared relationships):
+//   - `linked_agents` = intent (who should work on this task)
+//   - participation_log = observation (who actually started a session)
 //
-// 后端 `dedupe:true` 只对 user_id 生效，agent 维度需前端自行 dedupe。
+// The backend's `dedupe:true` only applies to user_id; the agent dimension must be deduped on the frontend.
 
 export interface ParticipationLogEntity {
   id?: string;
@@ -162,8 +162,8 @@ export interface ParticipationLogEntity {
 
 export const participationLogsApi = {
   /**
-   * 拉取指定 task 的原始参与日志（不走内核 `dedupe`——它只按 user_id 去重，会丢
-   * agent 维度信息）。调用侧按 user_id / agent_id 分别 dedupe 得到两份展示列表。
+   * Fetch the raw participation log for a given task (not using the kernel's `dedupe`, which dedupes only by user_id and would lose
+   * the agent dimension). Callers dedupe by user_id / agent_id separately to get the two display lists.
    */
   listByTask: (teamId: string, taskId: string) =>
     metaListAll<ParticipationLogEntity>('participation-log/list', {
@@ -172,8 +172,8 @@ export const participationLogsApi = {
     }),
 
   /**
-   * 拉取 team 下所有 task 的原始参与日志。列表页用一次请求覆盖 N 个 task 的
-   * 统计数字，避免 fanout；前端按 task_id 分桶后再各自 dedupe。
+   * Fetch the raw participation logs for all tasks under a team. The list page covers N tasks' stats
+   * with one request, avoiding fanout; the frontend buckets by task_id and dedupes each.
    */
   listByTeam: (teamId: string) =>
     metaListAll<ParticipationLogEntity>('participation-log/list', {

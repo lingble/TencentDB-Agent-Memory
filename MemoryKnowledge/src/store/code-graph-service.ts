@@ -1,20 +1,20 @@
 /**
- * CodeGraphService — code-graph 资产的异步编排。
+ * CodeGraphService — async orchestration of code-graph assets.
  *
- * 把 IKnowledgeStore（元数据/状态）+ BuildQueue（后台串行）+ 可注入的
- * worker（实际 git clone + codegraph 建图）粘合，实现：
- *   - create/sync 立即返回（fire-and-forget），管控轮询 status；
- *   - 状态机 pending → processing(cloning/indexing) → ready / failed(+sync_error)；
- *   - memory + team 隔离、幂等（同 memory+team+repo+branch 返回已存在）、硬删 + 四类资源清理。
+ * Glues together IKnowledgeStore (metadata/status) + BuildQueue (background serial) + an injectable
+ * worker (actual git clone + codegraph build) to provide:
+ *   - create/sync return immediately (fire-and-forget); the control plane polls status;
+ *   - state machine pending → processing(cloning/indexing) → ready / failed(+sync_error);
+ *   - memory + team isolation, idempotency (same memory+team+repo+branch returns the existing one), hard delete + cleanup of four resource kinds.
  *
- * delete 语义（008 / 007 §5.5）：任何状态（含 pending/processing）均可删。
- * 用内存 cancelled 标记通知 in-flight worker 中止（不落库、不软删）；worker 在
- * 结束前的检查点发现被删则跳过 ready/回调并做幂等清理。清理覆盖四类资源：
- * instance pool（内存）→ 元数据行（硬删）→ 磁盘目录（rmSync），分步 try/catch
- * 保证任一步失败不影响其余（异常安全 + 幂等）。远端元数据上报本阶段不做。
+ * delete semantics (008 / 007 §5.5): deletable in any state (including pending/processing).
+ * An in-memory cancelled flag tells the in-flight worker to abort (not persisted, no soft delete); if the worker
+ * finds at a checkpoint before finishing that the resource was deleted, it skips ready/callback and does idempotent cleanup. Cleanup covers four resource kinds:
+ * instance pool (memory) → metadata row (hard delete) → disk directory (rmSync), with per-step try/catch
+ * so that a failure in any step doesn't affect the others (exception-safe + idempotent). Remote metadata reporting is not done in this phase.
  *
- * worker 注入便于单测（无需真实 git/codegraph）；生产实现见 router 装配处。
- * 物理目录：{dataRoot}/{service_id}/{team_id}/{code_graph_id}/（001 多租户）。
+ * The worker is injected to ease unit testing (no real git/codegraph needed); see the router wiring for the production implementation.
+ * Physical directory: {dataRoot}/{service_id}/{team_id}/{code_graph_id}/ (001 multi-tenancy).
  */
 
 import { join } from "node:path";
@@ -39,9 +39,9 @@ export interface CodeGraphBuildContext {
   teamId: string;
   repoUrl: string;
   branch: string;
-  /** 该资产的本地工作目录（checkout + 索引落此）。 */
+  /** Local working directory for this asset (checkout + index live here). */
   dir: string;
-  /** worker 可调用以更新细粒度内部状态（cloning → indexing）。 */
+  /** Callable by the worker to update fine-grained internal status (cloning → indexing). */
   setInternalStatus: (s: string) => void;
   /**
    * 资产归属用户（SSH clone 用它定位该用户的私钥）。
@@ -58,10 +58,10 @@ export interface CodeGraphBuildResult {
 export type CodeGraphWorker = (ctx: CodeGraphBuildContext) => Promise<CodeGraphBuildResult>;
 
 /**
- * sync 结果（判别联合）：
- *   - ok       已入队重建；
- *   - not_found memory/team/id 不匹配；
- *   - busy     正在 pending/processing（并发拒绝，对应 HTTP 409），step 为内部阶段（可 null）。
+ * sync result (discriminated union):
+ *   - ok       rebuild enqueued;
+ *   - not_found memory/team/id mismatch;
+ *   - busy     currently pending/processing (concurrent rejection, maps to HTTP 409); step is the internal stage (may be null).
  */
 export type SyncResult =
   | { kind: "ok"; row: CodeGraphRow }
@@ -97,7 +97,7 @@ export interface CodeGraphServiceLogger {
 
 export interface CodeGraphServiceOptions {
   store: IKnowledgeStore;
-  /** knowledge 数据根目录；资产目录 = {dataRoot}/{service_id}/{team_id}/{code_graph_id}/。 */
+  /** knowledge data root directory; asset directory = {dataRoot}/{service_id}/{team_id}/{code_graph_id}/. */
   dataRoot: string;
   /** 常规 worker：拉取（clone/fetch）+ 建索引。create / sync 走它。 */
   worker: CodeGraphWorker;
@@ -114,21 +114,21 @@ export interface CodeGraphServiceOptions {
   /** Callback config for TMC status notifications. Optional. */
   callbackConfig?: { tmcCallbackUrl: string };
   /**
-   * 外部来源凭据存储（create 带 credential 时在入队前先落库）。
-   * 未注入时 create 不接受 credential 参数（公开仓场景）。
+   * External source credential store (when create carries a credential, it is persisted before enqueueing).
+   * When not injected, create does not accept a credential parameter (public repo scenario).
    */
   credentialStore?: ICredentialStore;
   /**
-   * 代码来源 provider 注册中心（用于读 provider 声明的认证方式）。
-   * 只依赖 `authMethod.kind` 这一个字段，避免 store 层反向依赖 code-source 全量类型。
+   * Code source provider registry (used to read the auth method a provider declares).
+   * Only depends on the `authMethod.kind` field, so the store layer doesn't depend back on the full code-source types.
    */
   codeSourceRegistry?: {
     get(id: string): { authMethod: { kind: AuthMethodKind } } | undefined;
   };
   /**
-   * 释放该 code-graph 占用的内存资源（instance pool + 关闭索引句柄）。
-   * 注入而非直依赖 module，保持 store 层不反向依赖装配层。幂等：重复调用安全。
-   * 由 module.ts 装配时提供（封装 instancePool.delete + closeIndex）。
+   * Release in-memory resources held by this code-graph (instance pool + close index handle).
+   * Injected rather than depending on module directly, so the store layer doesn't depend back on the wiring layer. Idempotent: safe to call repeatedly.
+   * Provided by module.ts during wiring (wraps instancePool.delete + closeIndex).
    */
   releaseInstance?: (codeGraphId: string) => void;
 }
@@ -145,8 +145,8 @@ export interface CreateCodeGraphParams {
   task_id?: string;
   visibility?: string;
   /**
-   * 外部来源凭据（私有仓）。与 create 同请求传入，KS 在**入队建图前**先落库，
-   * 消除「create 立即 clone、凭据尚未写入」的时序窗口。
+   * External source credential (private repo). Passed in the same request as create; KS persists it **before enqueueing the build**,
+   * eliminating the race window of "create clones immediately before the credential is written".
    */
   credential?: {
     provider_id: string;
@@ -167,9 +167,9 @@ export class CodeGraphService {
   private readonly credentialStore?: ICredentialStore;
   private readonly codeSourceRegistry?: CodeGraphServiceOptions["codeSourceRegistry"];
   /**
-   * In-flight delete 标记：delete 命中一个正在排队/执行的资源时置位，
-   * worker 在检查点读取以决定中止。仅内存态（同 id 由 SerialQueue 串行 +
-   * Node 单线程，读写无并发）。清理收尾后移除。
+   * In-flight delete flags: set when delete hits a resource that is queued/executing;
+   * the worker reads them at checkpoints to decide whether to abort. In-memory only (the same id is serialized by SerialQueue +
+   * Node is single-threaded, so reads/writes never race). Removed after cleanup finishes.
    */
   private readonly cancelled = new Set<string>();
 
@@ -191,28 +191,28 @@ export class CodeGraphService {
   }
 
   /**
-   * 幂等创建并异步建图。
-   * - 已存在（同 memory+team+repo+branch）→ 直接返回已有行，不重复建图。
-   * - 新建 → 入库 pending + 后台建图。
+   * Idempotently create and build the graph asynchronously.
+   * - Already exists (same memory+team+repo+branch) → return the existing row directly, without rebuilding.
+   * - New → persist as pending + build in the background.
    */
   create(params: CreateCodeGraphParams): { row: CodeGraphRow; existed: boolean } {
     const { row, existed } = this.store.createCodeGraph(params);
     if (!existed) {
-      // ① 私有仓：入队前先落凭据（否则 worker 立刻 clone 时凭据还不存在 → 401）。
+      // ① Private repo: persist the credential before enqueueing (otherwise the worker clones immediately before the credential exists → 401).
       //
-      // 例外：SSH 来源不落凭据行 —— 它用「每用户私钥 + GIT_SSH_COMMAND」而非
-      // URL 注入令牌。若落了凭据行，worker 会把 ssh:// 地址丢给 basic-auth
-      // 拼装器拼成 https://... 直接炸掉。详见设计文档 §2.2 D2。
+      // Exception: SSH sources don't persist a credential row — they use a per-user private key + GIT_SSH_COMMAND
+      // instead of a token injected into the URL. If a credential row were stored, the worker would hand the ssh:// URL
+      // to the basic-auth builder, which would turn it into https://... and blow up. See design doc §2.2 D2.
       const isSshSource = params.credential?.provider_id === SSH_PROVIDER_ID;
       if (params.credential && !isSshSource) {
         if (!this.credentialStore) {
           throw new Error("credential provided but credentialStore is not wired");
         }
-        // 落库 kind 按 provider 的认证方式决定；未注入 registry 时兼容退化为 bearer。
+        // The persisted kind is determined by the provider's auth method; falls back to bearer when no registry is injected.
         //
-        // AuthMethodKind 比 CredentialKind 多一个 "ssh-key"（协议级、不落库）。
-        // 此处显式收窄：非 bearer/basic 一律按 bearer 处理 —— 能走到这里的
-        // 一定不是 ssh（上面已排除），收窄只为让类型系统满意，不改变运行时行为。
+        // AuthMethodKind has one more member than CredentialKind: "ssh-key" (protocol-level, never persisted).
+        // Narrow explicitly here: anything other than bearer/basic is treated as bearer — whatever reaches this point
+        // is definitely not ssh (excluded above); the narrowing only satisfies the type system and doesn't change runtime behavior.
         const declared =
           this.codeSourceRegistry?.get(params.credential.provider_id)?.authMethod.kind ?? "bearer";
         const kind: CredentialKind = declared === "basic" ? "basic" : "bearer";
@@ -240,11 +240,11 @@ export class CodeGraphService {
     return this.store.updateCodeGraphMeta(serviceId, codeGraphId, patch);
   }
 
-  /** 重新拉取 + 重建（管控显式触发）。memory/team 不匹配返回 not_found；pending/processing 返回 busy。 */
+  /** Re-pull + rebuild (explicitly triggered by the control plane). memory/team mismatch returns not_found; pending/processing returns busy. */
   sync(serviceId: string, teamId: string, codeGraphId: string, requesterUserId?: string): SyncResult {
     const row = this.store.getCodeGraph(serviceId, teamId, codeGraphId);
     if (!row) return { kind: "not_found" };
-    // 并发拒绝：正在排队/执行中直接拒绝，不覆盖状态、不重复入队、不写 audit。
+    // Concurrent rejection: reject outright while queued/executing — no status overwrite, no re-enqueue, no audit.
     if (row.status === "pending" || row.status === "processing") {
       return { kind: "busy", status: row.status, step: row.internal_status };
     }
@@ -309,7 +309,7 @@ export class CodeGraphService {
     return this.store.getCodeGraph(serviceId, teamId, codeGraphId);
   }
 
-  /** 按全局唯一 code_graph_id 查询（仍按 service_id 收敛防跨租户）。spec id-only 端点专用。 */
+  /** Look up by globally unique code_graph_id (still scoped by service_id to prevent cross-tenant access). For spec id-only endpoints. */
   getById(serviceId: string, codeGraphId: string): CodeGraphRow | null {
     return this.store.getCodeGraphById(serviceId, codeGraphId);
   }
@@ -323,18 +323,18 @@ export class CodeGraphService {
   }
 
   /**
-   * 删除 code-graph（008 / 007 §5.5）。任何状态均可删（含 pending/processing）。
-   * memory/team 不匹配返回 false；否则硬删 + 四类资源清理，返回 true。
+   * Delete a code-graph (008 / 007 §5.5). Deletable in any state (including pending/processing).
+   * memory/team mismatch returns false; otherwise hard delete + cleanup of four resource kinds, returns true.
    *
-   * 若资源正在排队/执行（pending/processing），先置 cancelled 标记通知 worker
-   * 在检查点中止；随后立即硬删 + 清理（不等 worker）。worker 结束前重查发现
-   * 已删则跳过 ready/回调并再做一次幂等清理，无残留。
+   * If the resource is queued/executing (pending/processing), first set the cancelled flag to tell the worker
+   * to abort at a checkpoint; then immediately hard delete + clean up (without waiting for the worker). When the worker re-checks before finishing and finds
+   * it deleted, it skips ready/callback and does another idempotent cleanup, leaving nothing behind.
    */
   delete(serviceId: string, teamId: string, codeGraphId: string): boolean {
     const row = this.store.getCodeGraph(serviceId, teamId, codeGraphId);
     if (!row) return false;
 
-    // 通知 in-flight worker 中止（pending 排队 or processing 执行中）。
+    // Tell the in-flight worker to abort (pending in queue or processing in progress).
     if (row.status === "pending" || row.status === "processing") {
       this.cancelled.add(codeGraphId);
     }
@@ -342,19 +342,19 @@ export class CodeGraphService {
     this.audit(row, "delete", null);
     this.cleanupResources(serviceId, teamId, codeGraphId);
 
-    // worker 若仍在跑，会在检查点看到行已被硬删（getById → null）而中止；
-    // cancelled 标记留到 worker 结束由其自行清理（见 runBuild），此处不删标记，
-    // 以覆盖“delete 先于 worker 检查点完成”的窗口。cleanup 幂等，重复无害。
+    // If the worker is still running, it sees at a checkpoint that the row was hard-deleted (getById → null) and aborts;
+    // the cancelled flag is left for the worker to clear when it finishes (see runBuild), so it's not removed here,
+    // to cover the window where "delete completes before the worker checkpoint". cleanup is idempotent; repeats are harmless.
     return true;
   }
 
   /**
-   * 四类资源幂等清理（顺序：先释放内存/连接，再删盘）。
-   * 每步独立 try/catch —— 任一步失败不影响其余，保证异常安全。
-   *   1. instance pool（内存）：releaseInstance（pool.delete + closeIndex）
-   *   2. 元数据行：硬删（命中 0 行也安全，支持 worker + delete 双重清理）
-   *   3. 磁盘目录：rmSync recursive+force（幂等）
-   * BuildQueue 排队任务由 runBuild 入口检查 cancelled/行存在性跳过，无需在此处理。
+   * Idempotent cleanup of four resource kinds (order: release memory/connections first, then delete from disk).
+   * Each step has its own try/catch — a failure in any step doesn't affect the others, ensuring exception safety.
+   *   1. instance pool (memory): releaseInstance (pool.delete + closeIndex)
+   *   2. metadata row: hard delete (safe even if 0 rows match; supports double cleanup by worker + delete)
+   *   3. disk directory: rmSync recursive+force (idempotent)
+   * Queued BuildQueue tasks are skipped by the runBuild entry check on cancelled/row existence, so nothing to do here.
    */
   private cleanupResources(serviceId: string, teamId: string, codeGraphId: string): void {
     try {
@@ -375,15 +375,15 @@ export class CodeGraphService {
   }
 
   /**
-   * worker 检查点：资源是否已被删除（cancelled 标记命中，或行已不在库）。
-   * 双判据覆盖：①delete 发生在 worker 运行中（cancelled）；②delete 已完成
-   * 且行被硬删（getById → null）。任一即视为已删。
+   * Worker checkpoint: whether the resource has been deleted (cancelled flag set, or row no longer in the DB).
+   * Two criteria cover: ① delete happened while the worker was running (cancelled); ② delete already completed
+   * and the row was hard-deleted (getById → null). Either one counts as deleted.
    */
   private isDeleted(serviceId: string, codeGraphId: string): boolean {
     return this.cancelled.has(codeGraphId) || this.store.getCodeGraphById(serviceId, codeGraphId) === null;
   }
 
-  /** 写一条 code-graph 审计记录。失败不阻断主流程。 */
+  /** Write a code-graph audit record. Failures don't block the main flow. */
   private audit(row: CodeGraphRow, action: AuditAction, detail: string | null, requesterUserId?: string): void {
     try {
       this.store.appendCodeGraphAudit({
@@ -391,7 +391,7 @@ export class CodeGraphService {
         asset_id: row.code_graph_id,
         version: row.version,
         action,
-        // 优先记录触发者（sync/create 的发起人），回退到行上的创建者。
+        // Prefer recording the requester (initiator of sync/create), falling back to the row's creator.
         user_id: requesterUserId ?? row.user_id,
         agent_id: row.agent_id,
         detail,
@@ -424,7 +424,7 @@ export class CodeGraphService {
     ownerUserId?: string,
     opts?: BuildOptions,
   ): Promise<void> {
-    // 入口检查点：pending 期间被删 → 直接跳过，不置 processing、不建图。
+    // Entry checkpoint: deleted while pending → skip directly; don't set processing, don't build.
     if (this.isDeleted(serviceId, codeGraphId)) {
       this.finishCancelled(serviceId, teamId, codeGraphId);
       return;
@@ -450,7 +450,7 @@ export class CodeGraphService {
           this.store.updateCodeGraphStatus(serviceId, codeGraphId, { status: "processing", internal_status: s }),
         ownerUserId,
       });
-      // 结束前检查点：processing 期间被删 → 跳过 ready/audit/回调，做幂等收尾清理。
+      // Pre-finish checkpoint: deleted during processing → skip ready/audit/callback and do idempotent final cleanup.
       if (this.isDeleted(serviceId, codeGraphId)) {
         this.finishCancelled(serviceId, teamId, codeGraphId);
         return;
@@ -473,7 +473,7 @@ export class CodeGraphService {
       await this.onBuildComplete(synced, "ready", null, result.stats ?? null);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      // worker 抛错，但若期间已被删，视为取消而非失败：跳过 failed 状态/回调，做清理。
+      // The worker threw, but if it was deleted in the meantime, treat it as cancelled rather than failed: skip failed status/callback and clean up.
       if (this.isDeleted(serviceId, codeGraphId)) {
         this.finishCancelled(serviceId, teamId, codeGraphId);
         return;
@@ -493,8 +493,8 @@ export class CodeGraphService {
   }
 
   /**
-   * worker 检查点判定“已删”后的收尾：幂等清理 worker 可能刚写下的盘/句柄，
-   * 并移除 cancelled 标记（该 id 的 worker 到此结束，标记使命完成）。
+   * Wrap-up after a worker checkpoint determines "deleted": idempotently clean up disk/handles the worker may have just written,
+   * and remove the cancelled flag (the worker for this id ends here, so the flag has served its purpose).
    */
   private finishCancelled(serviceId: string, teamId: string, codeGraphId: string): void {
     this.cleanupResources(serviceId, teamId, codeGraphId);
@@ -541,7 +541,7 @@ export class CodeGraphService {
     );
   }
 
-  /** 等待后台任务完成（测试 / 停机）。 */
+  /** Wait for background tasks to finish (tests / shutdown). */
   async onIdle(codeGraphId?: string): Promise<void> {
     await this.queue.onIdle(codeGraphId);
   }

@@ -1,23 +1,23 @@
 /**
- * api/base.ts — API 基础设施。
+ * api/base.ts — API infrastructure.
  *
- * 规则（无 Cookie · 无状态）：
- *   - 元数据 CRUD 统一走 POST /api/v1/meta/{action}；
- *   - 鉴权由前端 sessionStorage 缓存 instance_id + user_key（见 lib/panelSession.ts），
- *     每次请求注入 Header X-Tdai-Service-Id + X-Tdai-User-Key（auth/verify 除外，
- *     该接口 user_key 只放 body，不放 Header）；
- *   - agent-fixed-asset/* 不适用通用「资产」UI（PANEL_CAPABILITIES.assets 为 false），
- *     skill 挂载走 v3 数据面 fork（skillApi.forkToAgent）；
- *   - 所有函数返回 Promise<T>，失败抛 ApiError。
+ * Rules (no Cookie · stateless):
+ *   - Metadata CRUD always goes through POST /api/v1/meta/{action};
+ *   - Auth: the frontend caches instance_id + user_key in sessionStorage (see lib/panelSession.ts),
+ *     and every request injects Header X-Tdai-Service-Id + X-Tdai-User-Key (except auth/verify,
+ *     whose user_key goes only in the body, not the Header);
+ *   - agent-fixed-asset/* does not use the generic "assets" UI (PANEL_CAPABILITIES.assets is false);
+ *     skill mounting goes through the v3 data-plane fork (skillApi.forkToAgent);
+ *   - All functions return Promise<T> and throw ApiError on failure.
  */
 import { getPanelSession, clearPanelSession } from '../panelSession';
 import { formatApiErrorMessage } from '../error-message';
 import type { MetaEnvelope, PaginatedResult, PublicUser } from './types';
 
 /**
- * 通用「资产」能力开关。
- * UI 消费 assetsApi / agentsApi.getAssets|getFixedAssets|setFixedAssets 前应先判断
- * `PANEL_CAPABILITIES.assets`，为 false 时展示"暂未开放"占位，不要发起注定 501 的请求。
+ * Generic "assets" capability switch.
+ * UI that consumes assetsApi / agentsApi.getAssets|getFixedAssets|setFixedAssets should first check
+ * `PANEL_CAPABILITIES.assets`; when false, show a "not yet available" placeholder and don't send requests doomed to 501.
  */
 export const PANEL_CAPABILITIES = {
   assets: false,
@@ -55,12 +55,12 @@ export class ApiError extends Error {
 
 const AUTH_UNAUTHORIZED_EVENT = 'auth:unauthorized';
 
-/** 发出 401 事件，App 层监听后清 auth state 展示登录页 */
+/** Emit a 401 event; the App layer listens, clears auth state and shows the login page */
 function emitUnauthorized() {
   window.dispatchEvent(new CustomEvent(AUTH_UNAUTHORIZED_EVENT));
 }
 
-/** 监听 401 事件 */
+/** Listen for 401 events */
 export function onUnauthorized(handler: () => void): () => void {
   window.addEventListener(AUTH_UNAUTHORIZED_EVENT, handler);
   return () => window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, handler);
@@ -104,7 +104,7 @@ export async function request<T>(
   if (res.status === 401) {
     const text = await res.text().catch(() => '');
     const env = parseMetaErrorEnvelope(text);
-    // WOA 登录确认尚未建立业务会话，失败时不能清空整个登录页状态。
+    // WOA login confirmation hasn't established a business session yet; on failure, don't wipe the whole login page state.
     if (!path.endsWith('/auth/idp/woa/complete')) emitUnauthorized();
     throw new ApiError(res.status, res.statusText, text || 'Unauthorized', env);
   }
@@ -117,20 +117,20 @@ export async function request<T>(
   return res.json() as Promise<T>;
 }
 
-// ========================= Meta API 基础 =========================
+// ========================= Meta API basics =========================
 
 export const META_PREFIX = '/api/v1/meta';
 export const META_PAGE_SIZE = 100;
 
 /**
- * 登出 / 401 时清空前端会话（instance_id + user_key + user 缓存）。
- * 无 Cookie，"清会话"就是清 sessionStorage，不涉及后端调用。
+ * On logout / 401, clear the frontend session (instance_id + user_key + user cache).
+ * No Cookie, so "clearing the session" just means clearing sessionStorage, with no backend call.
  */
 export function clearSessionCache(): void {
   clearPanelSession();
 }
 
-/** 从当前会话取当前登录用户；未登录抛错（调用方应先保证已登录）。 */
+/** Get the current logged-in user from the session; throws if not logged in (callers should ensure login first). */
 export async function getCurrentUser(): Promise<PublicUser> {
   const session = getPanelSession();
   if (!session?.user) {
@@ -140,10 +140,10 @@ export async function getCurrentUser(): Promise<PublicUser> {
 }
 
 /**
- * 解包内核统一信封：`code !== 0` 或 `data` 为空时抛 ApiError。
+ * Unwrap the kernel's unified envelope: throw ApiError when `code !== 0` or `data` is empty.
  *
- * meta（/api/v1/meta/*）与 analytics（/api/v1/analytics/*）等透明代理的信封结构
- * 完全一致，解包逻辑由本函数统一承载，避免各 client 重复实现导致行为漂移。
+ * Transparent proxies such as meta (/api/v1/meta/*) and analytics (/api/v1/analytics/*) share exactly the same
+ * envelope structure; this function owns the unwrap logic to avoid drift from each client reimplementing it.
  */
 export function unwrapEnvelope<T>(envelope: MetaEnvelope<T>, emptyMessage: string): T {
   if (envelope.code !== 0) {
@@ -164,9 +164,9 @@ export function unwrapEnvelope<T>(envelope: MetaEnvelope<T>, emptyMessage: strin
 }
 
 /**
- * meta 透明代理的公共调用：注入指定 Header，POST body，解析信封。
- * `auth/verify` 走此函数但只传 X-Tdai-Service-Id（不带 user-key），
- * 其余 action 走 `metaPost`（自动从 session 注入双 Header）。
+ * Shared call for the meta transparent proxy: inject the given Headers, POST body, parse the envelope.
+ * `auth/verify` uses this function but passes only X-Tdai-Service-Id (no user-key);
+ * other actions use `metaPost` (auto-injects both Headers from the session).
  */export async function metaCall<T>(
   action: string,
   body: Record<string, unknown>,
@@ -182,19 +182,19 @@ export async function metaPost<T>(action: string, body: Record<string, unknown> 
     throw new ApiError(401, 'Unauthorized', 'no active panel session');
   }
   const headers: Record<string, string> = { 'X-Tdai-Service-Id': session.instanceId };
-  // IdP Session 用 HttpOnly Cookie 认证，user_key 不下发到浏览器。
+  // IdP Session authenticates with an HttpOnly Cookie; user_key is never sent to the browser.
   if (session.userKey) headers['X-Tdai-User-Key'] = session.userKey;
   return metaCall<T>(action, body, headers);
 }
 
 /**
- * 分页拉取 meta list 全部 items（内核 DEFAULT_PAGINATION = {limit: 20}，
- * 不传 limit 只会拿到前 20 条，列表类读取必须用本工具拿全量）。
+ * Page through all items of a meta list (kernel DEFAULT_PAGINATION = {limit: 20};
+ * without limit only the first 20 are returned, so list reads must use this helper to get everything).
  *
- * offset 必须按 limit 步进，**不能**按 `items.length` 步进：带过滤语义的接口
- * （如 agent-fixed-asset/list-with-detail，total 是过滤前总数、items 是过滤后集合）
- * 的 `items.length < limit`，按 items.length 推进会让下一页从错误位置重新开始，
- * 造成条目重复；整页被过滤时更会提前 break 漏掉尾部数据。
+ * offset must step by limit, **not** by `items.length`: for endpoints with filtering semantics
+ * (e.g. agent-fixed-asset/list-with-detail, where total is the pre-filter count and items is the filtered set)
+ * `items.length < limit`, so advancing by items.length restarts the next page at the wrong position,
+ * causing duplicates; when a whole page is filtered out it would even break early and miss trailing data.
  */
 export async function metaListAll<T>(action: string, body: Record<string, unknown>): Promise<T[]> {
   const items: T[] = [];
@@ -209,8 +209,8 @@ export async function metaListAll<T>(action: string, body: Record<string, unknow
     items.push(...batch);
     const total = typeof page.total === 'number' ? page.total : undefined;
     if (batch.length === 0) {
-      // 空页：通常代表已到末尾。但带过滤语义的接口中间页可能整页为空
-      // （total 仍是过滤前总数），此时继续推进以免漏拉后续有效数据。
+      // Empty page: usually means the end. But for endpoints with filtering semantics a middle page can be entirely empty
+      // (total is still the pre-filter count), so keep advancing to avoid missing later valid data.
       if (total !== undefined && offset + META_PAGE_SIZE < total) {
         offset += META_PAGE_SIZE;
         continue;
@@ -224,14 +224,14 @@ export async function metaListAll<T>(action: string, body: Record<string, unknow
 }
 
 /**
- * 「请求进行中去重」：同一 key 上一次发起尚未 settle 时，复用同一个 Promise，
- * 请求结束后立即从表中移除（不做结果缓存）。
+ * "In-flight request dedup": while the previous call on the same key hasn't settled, reuse the same Promise;
+ * remove it from the table as soon as the request finishes (no result caching).
  *
- * 用途：消除 React 18 StrictMode 开发态对 effect 的双调用、以及组件并发挂载
- * 造成的同一接口重复网络请求。
+ * Purpose: eliminate duplicate network requests to the same endpoint caused by React 18 StrictMode double-invoking effects in dev,
+ * and by components mounting concurrently.
  *
- * 约束：只能用于**幂等只读**接口（list/get）。create/revoke 等写操作严禁复用，
- * 否则会把两次独立写合并成一次。
+ * Constraint: only for **idempotent read-only** endpoints (list/get). Write operations like create/revoke must never reuse it,
+ * or two independent writes would be merged into one.
  */
 const inFlightReads = new Map<string, Promise<unknown>>();
 export function dedupeInFlight<T>(key: string, factory: () => Promise<T>): Promise<T> {

@@ -83,4 +83,3 @@ docs/architecture/*.md
 
 # Draft contributing guides live outside default commits until open-source PR
 CONTRIBUTING.md
-CONTRIBUTING_CN.md

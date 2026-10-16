@@ -1,5 +1,5 @@
 /**
- * BoardView —— 工作台任务卡片网格 + 详情抽屉。
+ * BoardView - workbench task card grid + detail drawer.
  */
 import { useTranslation } from 'react-i18next';
 import { Button, Copy, Drawer, Dropdown, List, Pagination, Tag, Text } from 'tea-component';
@@ -18,20 +18,20 @@ import {
 } from '../utils/workbench-utils';
 
 /**
- * 可选页长。默认 12 与 TaskWorkbench 的初始值一致；
- * 上限取 96 —— 内核 meta list 的 limit 最大 100，页长必须落在其内。
+ * Selectable page sizes. Default 12 matches TaskWorkbench's initial value;
+ * capped at 96 - the kernel meta list limit max is 100, so page size must stay within it.
  */
 const PAGE_SIZE_OPTIONS = [12, 24, 48, 96];
 
 /**
- * 「导入 Task」下拉入口。
+ * "Import Task" dropdown entry.
  *
- * 为什么不直接做成一个按钮：后续会接入多个导入源（当前只有 TAPD），
- * 用户需要先选「从哪个源导入」。列表由后端已启用的来源驱动 ——
- * 新增来源时后端 registry 加一个 provider，前端无需再改这里。
+ * Why not a plain button: multiple import sources will be added later (currently only TAPD),
+ * so the user must first choose "which source to import from". The list is driven by sources enabled on the backend -
+ * adding a source means adding a provider to the backend registry, with no frontend change here.
  *
- * 只有一个来源时仍保持下拉形态：多一个点击，但交互与多源时一致，
- * 避免「加第二个源时按钮行为突变」。
+ * Keep the dropdown form even with a single source: one extra click, but the interaction matches the multi-source case,
+ * avoiding "button behavior suddenly changing when a second source is added".
  */
 function ImportTaskDropdown({
   sources,
@@ -81,10 +81,10 @@ export default function BoardView({
   onUpdateStatus,
   onUpdateTask,
   /**
-   * 「导入 Task」入口（下拉选源）。
+   * "Import Task" entry (dropdown to choose a source).
    *
-   * 传 undefined 或空 sources → 入口隐藏：后端未启用任何外部来源时
-   * 不应暴露一个点开必然失败的入口。
+   * Passing undefined or empty sources → entry hidden: when the backend has no external source enabled,
+   * we shouldn't expose an entry that is guaranteed to fail when opened.
    */
   onImport,
   importSources,
@@ -111,9 +111,9 @@ export default function BoardView({
       Pick<Task, 'title' | 'description' | 'source_type' | 'source_url' | 'linked_agents'>
     >,
   ) => void;
-  /** 选中某个来源后回调，参数是该来源 id（如 `tapd`）。 */
+  /** Callback after a source is selected; the argument is that source's id (e.g. `tapd`). */
   onImport?: (providerId: string) => void;
-  /** 可导入的来源列表（后端已启用的）。空 → 入口隐藏。 */
+  /** Importable sources (enabled on the backend). Empty → entry hidden. */
   importSources?: Array<{ id: string }>;
   agents: AgentOption[];
   teams: Team[];
@@ -122,23 +122,23 @@ export default function BoardView({
 }) {
   const { t } = useTranslation();
   const statusLabels = useStatusLabels();
-  // 来源 chip：具体来源（tapd…）→ 展示名；手动任务显示「手动创建」
+  // Source chip: a concrete source (tapd…) → display name; manual tasks show "Created manually"
   const sourceLabel = useSourceLabel();
-  // 参与者 tooltip 展示 display_name 而非 user_id（与抽屉详情 UserChip 同一缓存）
+  // Participant tooltip shows display_name rather than user_id (same cache as the drawer's UserChip)
   const resolveUserName = useDisplayNameResolver();
   const selectedTeam = selected
     ? (teams.find((x) => x.team_id === selected.team_id) ?? null)
     : null;
 
-  // 后端分页：useTasks 已只返回当前页数据，不需要前端切片
+  // Backend pagination: useTasks already returns only the current page, no frontend slicing needed
   const totalPages = Math.max(1, Math.ceil(tasksTotal / pageSize));
-  // 越界保护：父组件已用 effect 把 currentPage 拉回有效范围，
-  // 这里的 clamp 只是拉回生效前一帧的展示兜底，真正的修复在 TaskWorkbench。
+  // Out-of-range guard: the parent already uses an effect to pull currentPage back into range;
+  // this clamp is only a display fallback for the frame before that takes effect; the real fix is in TaskWorkbench.
   const safePage = Math.min(currentPage, totalPages);
   const pagedTasks = tasks;
   return (
     <div className="_memory-panel-card">
-      {/* 头部：复用 members / agents 的 Section 通用头部（标题 + 计数 Tag + 副标题 + 右侧操作） */}
+      {/* Header: reuses the common Section header of members / agents (title + count Tag + subtitle + right-side actions) */}
       <div className="_memory-section-header">
         <div className="_memory-section-header-info">
           <div className="_memory-section-header-title-row">
@@ -148,7 +148,7 @@ export default function BoardView({
           <div className="_memory-section-subtitle">{t('task.list.subtitle')}</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          {/* 未启用任何外部来源时 importSources 为空 → 入口隐藏 */}
+          {/* When no external source is enabled importSources is empty → entry hidden */}
           {onImport && importSources && importSources.length > 0 && (
             <ImportTaskDropdown sources={importSources} onPick={onImport} />
           )}
@@ -160,7 +160,7 @@ export default function BoardView({
       </div>
 
       {tasksLoading && tasks.length === 0 ? (
-        // 首屏加载骨架屏：6 个占位卡片 + shimmer 动画
+        // First-load skeleton: 6 placeholder cards + shimmer animation
         <div className="_memory-workbench-skeleton-grid" aria-label="loading">
           {[0, 1, 2, 3, 4, 5].map((i) => (
             <div key={i} className="_memory-workbench-skeleton-card">
@@ -180,7 +180,7 @@ export default function BoardView({
             const view = participationOf(participationByTask, task.task_id);
             const imParticipant = view.users.includes(currentUser);
             const agentNameById = new Map(agents.map((a) => [a.id, a.name]));
-            // 与抽屉页一致：滤掉导入哨兵（历史参与记录），不渲染「外部任务导入」标签。
+            // Same as the drawer: filter out import sentinels (historical participation records), don't render the "External task import" tag.
             const agentLabels = visibleAgentIds(view.agentIds).map(
               (id) => agentNameById.get(id) ?? id,
             );
@@ -191,7 +191,7 @@ export default function BoardView({
                 className={`_memory-workbench-task-card _memory-workbench-task-card--${task.status}`}
                 onClick={() => onSelect(task.task_id)}
               >
-                {/* 头行：标题 + 右侧状态 pill + 箭头 */}
+                {/* Header row: title + status pill on the right + arrow */}
                 <div className="_memory-workbench-task-card-head">
                   <span className="_memory-workbench-task-card-title" title={task.title}>
                     {task.title}
@@ -204,10 +204,10 @@ export default function BoardView({
                   <ChevronRightIcon size={14} className="_memory-workbench-task-card-chevron" />
                 </div>
 
-                {/* id + 来源 chips：id 可点击复制（tea Copy 自带「复制成功」气泡） */}
+                {/* id + source chips: id is click-to-copy (tea Copy has a built-in "Copied" bubble) */}
                 <div className="_memory-workbench-task-card-chips">
                   <Tag size="sm" variant="outlined" className="_memory-workbench-task-card-id">
-                    {/* stopPropagation：复制点击不能冒泡成卡片选中（打开抽屉） */}
+                    {/* stopPropagation: the copy click must not bubble up into card selection (opening the drawer) */}
                     <span onClick={(e) => e.stopPropagation()}>
                       <Copy text={task.task_id}>
                         <span className="_memory-mono">{task.task_id}</span>
@@ -217,7 +217,7 @@ export default function BoardView({
                   <Tag size="sm">{sourceLabel(readExternalProvider(task) ?? 'manual')}</Tag>
                 </div>
 
-                {/* 描述：无描述也给占位行，保持卡片等高节奏 */}
+                {/* Description: show a placeholder line even when empty, to keep card heights consistent */}
                 <p
                   className={
                     task.description?.trim()
@@ -228,7 +228,7 @@ export default function BoardView({
                   {task.description?.trim() || t('task.noDesc')}
                 </p>
 
-                {/* 灰色面板：参与者 / Agent 规模（tooltip 列出明细名单） */}
+                {/* Gray panel: participants / Agent count (tooltip lists the names) */}
                 <div className="_memory-workbench-task-card-panel">
                   <span
                     className="_memory-workbench-meta-item"
@@ -259,7 +259,7 @@ export default function BoardView({
                   </span>
                 </div>
 
-                {/* 底部：创建时间 */}
+                {/* Footer: creation time */}
                 <div className="_memory-workbench-task-card-meta">
                   <span className="_memory-workbench-task-card-time">
                     {t('task.createdAt', {
@@ -274,9 +274,9 @@ export default function BoardView({
       )}
 
       {/*
-        分页：有数据就展示（页长下拉常驻 —— 若只在多页时显示，
-        总数 ≤ 一页时用户会失去调整页长的入口）。
-        页长上限 96 < 内核 meta list 的 limit 最大值 100。
+        Pagination: shown whenever there is data (the page-size dropdown is always present - if shown only with multiple pages,
+        users would lose the page-size control when the total fits on one page).
+        Page size cap 96 < the kernel meta list limit max of 100.
       */}
       {tasksTotal > 0 && (
         <div className="_memory-workbench-pagination">
@@ -286,7 +286,7 @@ export default function BoardView({
             pageSizeOptions={PAGE_SIZE_OPTIONS}
             recordCount={tasksTotal}
             onPagingChange={({ pageIndex, pageSize: nextSize }) => {
-              // 改页长时组件已把页码重置为 1（isPagingReset 默认 true），两个值一起下发
+              // When the page size changes the component already resets the page to 1 (isPagingReset defaults to true); send both values together
               if (nextSize && nextSize !== pageSize) setPageSize(nextSize);
               if (pageIndex) setCurrentPage(pageIndex);
             }}
@@ -294,14 +294,14 @@ export default function BoardView({
         </div>
       )}
 
-      {/* 详情抽屉：设置（状态 / 编辑 / 删除）都在抽屉内完成 */}
+      {/* Detail drawer: settings (status / edit / delete) are all done inside the drawer */}
       <Drawer
         visible={!!selected}
         size="l"
         onClose={() => onSelect(null)}
         title={selected?.title}
-        // 标题右侧是弱化的元信息（task_id / team）：带字段名标签，
-        // 否则 id 紧跟在任务标题后，读起来会和任务名称混成一段。
+        // To the right of the title is de-emphasized metadata (task_id / team) with field-name labels;
+        // otherwise the id would follow the task title directly and read as part of the task name.
         subtitle={
           selected && (
             <span className="_memory-workbench-drawer-subtitle">

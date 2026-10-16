@@ -93,8 +93,8 @@ $DOCKER run -d --name "$CONTAINER" \
   --network "$NETWORK" \
   --network-alias memory-hub \
   --add-host=host.docker.internal:host-gateway \
-  -p "${PANEL_PORT}:8125" \
-  -p "${KNOWLEDGE_PORT}:8424" \
+  -p "${BIND_HOST:+${BIND_HOST}:}${PANEL_PORT}:8125" \
+  -p "${BIND_HOST:+${BIND_HOST}:}${KNOWLEDGE_PORT}:8424" \
   -v "${PANEL_VOLUME}:/data/knowledge" \
   -e PANEL_PORT=8125 \
   -e KNOWLEDGE_PORT=8424 \

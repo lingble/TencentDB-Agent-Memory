@@ -2264,7 +2264,7 @@ export class MetadataService {
     }
     // 存量实例首个请求可能不是 list 而是直接 create,兜底 seed default
     // 防止 assertAgentsNotOverlap 见空表 → INSERT custom → 只有 1 行 custom
-    // 无 default → 后续 hermes 请求 AGENT_NOT_CONFIGURED (design §5.5 存量兜底)
+    // 无 default → 后续 agent 请求 AGENT_NOT_CONFIGURED (design §5.5 存量兜底)
     await this.store.ensureDefaultSeeded(supportedAgents);
     try {
       const row = await this.store.createInstanceUpstreamGroup({

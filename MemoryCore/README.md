@@ -6,7 +6,7 @@ MemoryCore is the **memory and metadata core** of TencentDB Agent Memory. It pro
 - **Knowledge metadata**: identifiers, types, status, associations, and service locations for Wiki, Code Graph, and other knowledge sources.
 - **Asset management metadata**: users, teams, Agents, tasks, Skills, knowledge assets, memberships, ownership, and access relationships.
 
-MemoryCore runs independently and exposes these capabilities through an HTTP Gateway. OpenClaw, Hermes, and custom applications connect through lightweight adapters or SDKs. An Agent is a caller and a managed metadata entity; MemoryCore does not host, schedule, or execute the Agent itself.
+MemoryCore runs independently and exposes these capabilities through an HTTP Gateway. OpenClaw and custom applications connect through lightweight adapters or SDKs. An Agent is a caller and a managed metadata entity; MemoryCore does not host, schedule, or execute the Agent itself.
 
 > MemoryCore stores knowledge metadata, not knowledge content. Wiki parsing, code graph construction, indexing, and content retrieval are provided by `MemoryKnowledge/`.
 
@@ -17,12 +17,14 @@ MemoryCore runs independently and exposes these capabilities through an HTTP Gat
 - **Knowledge metadata registry**: registers knowledge sources and tracks their identifiers, types, status, associations, and service locations.
 - **Asset metadata management**: manages users, teams, Agents, tasks, Skills, knowledge assets, memberships, ownership, and access relationships.
 - **Skill Memory**: supports Skill creation, versions, resources, search, routing, and conversation-driven extraction.
+- **Custom memory prompts**: supports L1/L2/L3 prompt CRUD and bindings to an Agent, Team, or Instance, resolved with the precedence `Agent > Team > Instance > built-in`. Custom content can only adjust what the memory focuses on and how it is summarized; it cannot change the fixed output protocol.
+- **Generation provenance**: records the prompt ID, version, source, content hash, and input/output references actually used for each L1/L2/L3 generation, so generation logs can be located precisely by Memory ID. Prompt bodies are not snapshotted.
 - **Unified access**: provides HTTP APIs and TypeScript/Python SDKs for adapters and applications.
 
 ## Architecture
 
 ```text
-OpenClaw / Hermes / Custom Application
+OpenClaw / Custom Application
                   │
                   │ HTTP API / SDK
                   ▼
@@ -153,10 +155,6 @@ TDAI_MEMORY_API_KEY=<the same API key configured on the Gateway>
 TDAI_MEMORY_INSTANCE_ID=default
 ```
 
-### Hermes
-
-`hermes-plugin/` provides the Hermes Memory Provider. It follows the same adapter model and uses the Gateway for conversation capture and memory recall.
-
 ### Custom Agents
 
 Custom runtimes can use the SDKs included in this repository:
@@ -182,9 +180,75 @@ An adapter generally has three responsibilities:
 | `/v3/skill/*` | Skill management, search, versions, resources, and extraction | Stable |
 | `/v3/meta/*` | User, Team, Agent, Task, Asset, and access relationships | Management plane |
 | `/v3/knowledge/*` | Knowledge asset metadata registration | Management plane |
+| `/v3/memory-prompt/*` | Custom prompt CRUD, bindings, effective-prompt lookup, and setting logs | Management plane |
+| `/v3/memory-generation-log/list`, `/get` | L1–L3 generation log list, details, and provenance lookup by Memory ID | Management plane |
 | `/health` | Health check | Public |
 
 The v3 memory data plane requires `team_id`, `agent_id`, and `user_id`. Supply them in the request body or the corresponding `x-tdai-*` headers. `session_id` is optional and narrows operations to a session when provided.
+
+## Custom prompts and generation provenance
+
+Each Memory Instance can hold up to 500 custom prompts, and each prompt can contain up to 10,000 Unicode characters. Prompts and their target bindings are stored separately. An update keeps `memory_prompt_id` unchanged and increments `version` by 1; new generation tasks for existing bindings use the latest version.
+
+Target precedence:
+
+```text
+Agent > Team > Instance > built-in
+```
+
+- An Agent is uniquely identified by `team_id + agent_id`.
+- When no custom prompt matches, L1/L2/L3 use the current built-in system prompts unchanged.
+- When one matches, only the customer's memory strategy is appended. The fixed output protocols (L1 JSON, L2 Scene Markdown, and L3 Persona/Doctrine) cannot be modified.
+- Deleting a prompt removes its bindings; at runtime resolution falls back to the next level.
+
+Main endpoints:
+
+```text
+POST /v3/memory-prompt/create
+GET  /v3/memory-prompt/get
+POST /v3/memory-prompt/update
+POST /v3/memory-prompt/delete
+POST /v3/memory-prompt/set
+GET  /v3/memory-prompt/log
+GET  /v3/memory-generation-log/list
+GET  /v3/memory-generation-log/get
+```
+
+Create a prompt:
+
+```bash
+curl -sS -X POST http://127.0.0.1:8420/v3/memory-prompt/create \
+  -H "Authorization: Bearer ${TDAI_GATEWAY_API_KEY}" \
+  -H "x-tdai-service-id: local-memory" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "architecture-decisions",
+    "layer": "l1",
+    "prompt": "Focus on extracting architecture decisions, compatibility constraints, risks, and reusable methods."
+  }'
+```
+
+When `TDAI_GATEWAY_API_KEY` is not configured locally and the Gateway listens only on loopback, `Authorization` can be omitted. `x-tdai-service-id` is always required.
+
+Generation logs do not store custom prompt bodies; they record only the prompt ID, version, source, and SHA-256. Query by Memory ID:
+
+```bash
+curl -sS -G http://127.0.0.1:8420/v3/memory-generation-log/get \
+  -H "Authorization: Bearer ${TDAI_GATEWAY_API_KEY}" \
+  -H "x-tdai-service-id: local-memory" \
+  --data-urlencode "memory_id=<memory-id>" \
+  --data-urlencode "layer=l1"
+```
+
+The TypeScript SDK exports `MemoryPromptClient` and `MemoryGenerationLogClient`; the Python SDK provides both sync and async clients.
+
+Layered-generation E2E against real VDB, COS, and an OpenAI-compatible model:
+
+```bash
+npm run e2e:memory-prompt:vdb-cos
+```
+
+The test verifies the actual model requests for Agent L1, Team L2, and Instance L3 prompts, Memory/Profile persistence, Generation Refs, and COS logs, then cleans up this run's data using unique test IDs.
 
 ## Configuration
 
@@ -233,8 +297,9 @@ MemoryCore/
 ├── src/gateway/           HTTP Gateway and v2/v3 routers
 ├── src/services/          Pipeline scanner, workers, and scheduling services
 ├── openclaw-plugin/       Lightweight OpenClaw client adapter
-├── hermes-plugin/         Hermes Memory Provider
 ├── scripts/               Installation, build, migration, and operations tools
+│   ├── install-openclaw-plugin.sh       OpenClaw plugin installer
+│   └── migrate-v2-to-v3/                Data migration tool (v2 → v3)
 ├── Dockerfile             MemoryCore Gateway image
 ├── tdai-gateway*.yaml     Gateway configuration templates
 └── package.json           Node.js package metadata and commands

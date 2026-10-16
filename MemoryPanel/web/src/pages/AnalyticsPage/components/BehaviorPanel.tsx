@@ -1,12 +1,12 @@
 /**
- * BehaviorPanel — 使用行为面板（使用情况 Tab 的内容）。
+ * BehaviorPanel - usage behavior panel (content of the Usage Tab).
  *
- * 口径混排提示（勿合并展示）：
- *   - KPI / 趋势 / 端点占比 / bypass 原因 / 资产类别 → 内核 SQL 全量聚合，准确
- *   - 成员维度                                   → 面板侧抽样聚合，非全量
- *   - Trace 明细                                 → 内核全量分页，准确
+ * Note on mixed metric bases (do not merge for display):
+ *   - KPI / trends / endpoint share / bypass reasons / asset categories -> full kernel SQL aggregation, accurate
+ *   - Member dimension                                   -> sampled aggregation on the panel side, not full
+ *   - Trace details                                 -> full kernel pagination, accurate
  *
- * 下钻统一走抽屉（onDrill*），本面板不再持有 category / member 过滤态。
+ * Drill-down always goes through the drawer (onDrill*); this panel no longer holds category / member filter state.
  */
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';

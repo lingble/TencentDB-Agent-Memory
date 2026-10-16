@@ -2,7 +2,7 @@
  * StandaloneLLMRunner — powered by Vercel AI SDK (`ai` + `@ai-sdk/openai`).
  *
  * This runner does NOT depend on OpenClaw's `runEmbeddedPiAgent`. It is designed
- * for the Hermes Gateway scenario where TDAI runs as an independent Node.js sidecar
+ * for the standalone Gateway scenario where TDAI runs as an independent Node.js sidecar
  * without the OpenClaw host.
  *
  * Capabilities:
@@ -487,7 +487,7 @@ export interface StandaloneLLMRunnerFactoryOptions {
 /**
  * Factory that creates StandaloneLLMRunner instances.
  *
- * Used by the Gateway and Hermes host adapters.
+ * Used by the standalone Gateway host adapter.
  */
 export class StandaloneLLMRunnerFactory implements LLMRunnerFactory {
   private config: StandaloneLLMConfig;

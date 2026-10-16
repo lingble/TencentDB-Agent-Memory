@@ -303,7 +303,7 @@ head_ "P0-D 实例上游配置 (4)"
 ##############################################################################
 
 # P0-D1 未配模型组(official) → 200
-# 本实例 default 组(official) 覆盖 workbuddy/dsh/opencode/hermes/openclaw/pi，
+# 本实例 default 组(official) 覆盖 workbuddy/dsh/opencode/openclaw/pi，
 # 用 dsh 验证 official 路径落到全局 upstream.url。
 before=$(log_lines)
 req "/dsh/$SPACE/v1/chat/completions" \

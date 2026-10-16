@@ -25,12 +25,12 @@
  *
  * 注: 本字段当前只作标签用 —— 全仓库零处按值分支 (`resolveAgentAdapter` /
  * `resolveAgentStrategy` 都按 agentSource 字符串分派, 不读 agentKind)。
- * 因此给 hermes/openclaw 一个诚实值不会改变任何行为。
+ * 因此给 openclaw 一个诚实值不会改变任何行为。
  */
 export type AgentKind =
   | "claude-code" | "codebuddy" | "codex" | "workbuddy"
   | "dsh" | "opencode" | "pi"
-  | "hermes" | "openclaw"
+  | "openclaw"
   | "unknown";
 
 export type RequestKind = "main" | "fork" | "sidequery" | "auxiliary";

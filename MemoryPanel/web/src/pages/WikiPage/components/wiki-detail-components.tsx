@@ -1,8 +1,8 @@
 /**
- * wiki-detail-components —— Wiki 详情页的展示子组件。
- * 从 WikiSourcesPanel.tsx 尾部拆出（WikiActions / ResizeHandle /
- * GraphTabContent / PagesTabContent / RawFilesSection）。
- * 均为纯展示组件，数据与回调由外层注入，不含业务状态。
+ * wiki-detail-components — presentational subcomponents of the Wiki detail page.
+ * Split out from the tail of WikiSourcesPanel.tsx (WikiActions / ResizeHandle /
+ * GraphTabContent / PagesTabContent / RawFilesSection).
+ * All are pure presentational components; data and callbacks are injected from outside, with no business state.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -35,7 +35,7 @@ export function WikiActions({
 }: {
   source: WikiDetail;
   scopeTab: WikiScopeTab;
-  /** 当前这条 wiki 自身是否处于 ingest（pending / processing）状态 */
+  /** Whether this wiki itself is in ingest (pending / processing) state */
   isCurrentIngesting: boolean;
   onIngest: (wikiId: string) => void;
   onAllocate: (target: { wiki_id: string; name: string }) => void;
@@ -321,7 +321,7 @@ export function PagesTabContent({
 }
 
 // ═══════════════════════════════════════════
-// Raw Files Section — 原始文档列表，默认展开
+// Raw Files Section — raw document list, expanded by default
 // ═══════════════════════════════════════════
 export function RawFilesSection({
   wikiId,
@@ -352,7 +352,7 @@ export function RawFilesSection({
       .finally(() => setLoading(false));
   }, [wikiId]);
 
-  // refreshKey 变化（如上传成功后）时强制重载原始文档列表，无需用户手动刷新。
+  // When refreshKey changes (e.g. after a successful upload), force-reload the raw document list without manual refresh.
   useEffect(() => {
     reload();
   }, [reload, refreshKey]);
@@ -362,7 +362,7 @@ export function RawFilesSection({
     reload();
   }
 
-  // 加载中显示占位提示，避免请求期间直接渲染空态（return null）导致用户无感知。
+  // Show a placeholder while loading, to avoid rendering the empty state directly during the request (return null) and leaving users unaware.
   if (loading)
     return (
       <div className="_wiki-detail-rawfiles-loading">

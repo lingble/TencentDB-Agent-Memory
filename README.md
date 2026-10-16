@@ -11,18 +11,17 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E=22.16-brightgreen)](https://nodejs.org/)
 [![OpenClaw](https://img.shields.io/badge/OpenClaw-%3E=2026.3.13-orange)](https://github.com/openclaw/openclaw)
-[![Hermes](https://img.shields.io/badge/Hermes-Gateway-7B61FF)](https://hermes-agent.nousresearch.com/docs/)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/dJQM6mKMF)
 
 [Installation](#installation) · [Supported Agents](#all-agents-share-the-same-memory-server) · [What is it?](#what-is-tencentdb-agent-memory) · [Team Play](#one-play-style-build-a-growing-agent-team-for-a-one-person-company) · [Technical Implementation](#technical-implementation) · [Benchmark](#benchmark) · [Roadmap](#roadmap)
-
-[**English**](./README.md) · [简体中文](./README_CN.md)
 
 </div>
 
 ---
 
 > **Latest:** Team Memory Beta is evolving quickly — install it and start exploring in minutes.
+>
+> ☁️ **The cloud-hosted edition** is now live. If you're interested, fill out the questionnaire and we'll get in touch soon: **[Fill out the questionnaire](https://wj.qq.com/s2/27892273/3h5k/)**
 
 <td>
    <video src="https://github.com/user-attachments/assets/efb1a808-1f86-4cfe-802c-f7453f7ca938" width="100%" controls autoplay loop muted playsinline></video>
@@ -42,7 +41,7 @@ $EDITOR .env       # Fill in two sets of LLM parameters (memory group + proxy gr
 
 Open the panel: [http://localhost:8125](http://localhost:8125).
 
-Complete installation documentation (standalone Memory Hub deployment, Proxy + Claude Code / CodeBuddy usage, stop and cleanup, port reference, etc.) is available in [**INSTALL.md**](./INSTALL.md) (中文: [INSTALL_CN.md](./INSTALL_CN.md)).
+Complete installation documentation (standalone Memory Hub deployment, Proxy + Claude Code / CodeBuddy usage, stop and cleanup, port reference, etc.) is available in [**INSTALL.md**](./INSTALL.md).
 The MongoDB storage backend is **experimental** (off by default); see
 [INSTALL.md · MongoDB storage backend](./INSTALL.md#optional-mongodb-storage-backend-experimental-off-by-default).
 
@@ -58,22 +57,21 @@ One Proxy, unchanged protocol, zero-code integration — point the Agent's base 
 
 <table>
 <tr>
-<td align="center" width="140"><a href="./INSTALL.md#using-proxy-with-deepseek-harness-dsh"><img src="./assets/images/agents/dsh.png" width="48" height="48" /><br /><sub><b>DeepSeek Harness</b></sub></a></td>
-<td align="center" width="140"><a href="./INSTALL.md#using-proxy-with-claude-code"><img src="./assets/images/agents/claude-code.png" width="48" height="48" /><br /><sub><b>Claude Code</b></sub></a></td>
-<td align="center" width="140"><a href="./INSTALL.md#using-proxy-with-codex"><img src="./assets/images/agents/codex.png" width="48" height="48" /><br /><sub><b>Codex</b></sub></a></td>
-<td align="center" width="140"><a href="./INSTALL.md#using-proxy-with-codebuddy"><img src="./assets/images/agents/codebuddy.png" width="48" height="48" /><br /><sub><b>CodeBuddy</b></sub></a></td>
+<td align="center" width="140"><a href="./agents/dsh/"><img src="./assets/images/agents/dsh.png" width="48" height="48" /><br /><sub><b>DeepSeek Harness</b></sub></a></td>
+<td align="center" width="140"><a href="./agents/claude-code/"><img src="./assets/images/agents/claude-code.png" width="48" height="48" /><br /><sub><b>Claude Code</b></sub></a></td>
+<td align="center" width="140"><a href="./agents/codex/"><img src="./assets/images/agents/codex.png" width="48" height="48" /><br /><sub><b>Codex</b></sub></a></td>
+<td align="center" width="140"><a href="./agents/codebuddy/"><img src="./assets/images/agents/codebuddy.png" width="48" height="48" /><br /><sub><b>CodeBuddy</b></sub></a></td>
 </tr>
 <tr>
-<td align="center" width="140"><a href="./INSTALL.md#using-proxy-with-workbuddy"><img src="./assets/images/agents/workbuddy.png" width="48" height="48" /><br /><sub><b>WorkBuddy</b></sub></a></td>
-<td align="center" width="140"><a href="./INSTALL.md#using-proxy-with-hermes"><img src="./assets/images/agents/hermes.png" width="48" height="48" /><br /><sub><b>Hermes</b></sub></a></td>
-<td align="center" width="140"><a href="./INSTALL.md#using-proxy-with-openclaw"><img src="./assets/images/agents/openclaw.png" width="48" height="48" /><br /><sub><b>OpenClaw</b></sub></a></td>
-<td align="center" width="140"><a href="./INSTALL.md#using-proxy-with-other-platforms-generic"><sub><b>More frameworks coming soon...</b></sub></a></td>
+<td align="center" width="140"><a href="./agents/workbuddy/"><img src="./assets/images/agents/workbuddy.png" width="48" height="48" /><br /><sub><b>WorkBuddy</b></sub></a></td>
+<td align="center" width="140"><a href="./agents/openclaw/"><img src="./assets/images/agents/openclaw.png" width="48" height="48" /><br /><sub><b>OpenClaw</b></sub></a></td>
+<td align="center" width="140"><a href="./agents/README.md"><sub><b>More frameworks coming soon...</b></sub></a></td>
 </tr>
 </table>
 
 See [**INSTALL.md**](./INSTALL.md) for the exact configuration steps of each client.
 
-Don't see your favorite Agent? You can try adapting it yourself with the [Generic integration guide](./INSTALL.md#using-proxy-with-other-platforms-generic) — and we'd love a PR adding native support for it. See [**CONTRIBUTING.md**](./CONTRIBUTING.md) to get started.
+Don't see your favorite Agent? You can try adapting it yourself with the [Generic integration guide](./agents/README.md) — and we'd love a PR adding native support for it. See [**CONTRIBUTING.md**](./CONTRIBUTING.md) to get started.
 
 # What is TencentDB Agent Memory?
 
@@ -284,9 +282,8 @@ PersonaMem tests whether an Agent can correctly understand and apply user inform
 
 ## Related Documentation
 
-- [Roadmap](./ROADMAP.md) (what we're building next)
 - [Full Installation Guide](./INSTALL.md) (Memory Core + Hub + Proxy one-click deployment)
-- [Roadmap](./ROADMAP.md) (what we're building next; 中文: [ROADMAP_CN.md](./ROADMAP_CN.md))
+- [Roadmap](./ROADMAP.md) (what we're building next)
 - [Data Migration Tool (v2 → v3)](./MemoryCore/scripts/migrate-v2-to-v3/README.md) (if you're on an older release and want to migrate existing data)
 - [Knowledge OpenAPI](./MemoryKnowledge/openapi.yaml)
 - **API Documentation**:
@@ -303,7 +300,7 @@ Agent Memory doesn't have a settled standard yet. Bug reports, documentation, be
 
 Current release is **v2.0.0**. Next up (**v2.0.1**): zero-config cold start, faster Wiki generation, user/team custom prompts, Skill export, and Codex (IDE Plan mode) support.
 
-👉 See the full plan in [**ROADMAP.md**](./ROADMAP.md) (中文: [ROADMAP_CN.md](./ROADMAP_CN.md)).
+👉 See the full plan in [**ROADMAP.md**](./ROADMAP.md).
 
 ---
 ## Acknowledgements
@@ -311,7 +308,7 @@ Current release is **v2.0.0**. Next up (**v2.0.1**): zero-config cold start, fas
 TencentDB Agent Memory stands on the shoulders of the open-source community:
 
 - [**CodeGraph**](https://github.com/colbymchenry/codegraph) — our CodeGraph asset module **uses code from this project**. Its design of a pre-indexed code graph is the foundation of our implementation.
-- [**Hermes Agent**](https://github.com/nousresearch/hermes-agent) (Nous Research) — our Skill asset management **uses part of the Skill-related code from Hermes Agent and builds further optimizations base on it**.
+- [**Hermes Agent**](https://github.com/nousresearch/hermes-agent) (Nous Research) — our Skill asset management **uses part of the Skill-related code from Hermes Agent and builds further optimizations on top of it**.
 - [**"LLM Wiki"** by Andrej Karpathy](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) — the idea of treating documentation as an LLM-maintained, incrementally growing knowledge artifact directly informed how our Wiki layer is built and kept up to date.
 
 We are grateful to the authors and contributors of these projects.
@@ -324,7 +321,9 @@ We welcome contributions of all kinds — bug reports, feature suggestions, docu
 - 🐞 **Found a bug or have a question?** Open an issue in [GitHub Issues](https://github.com/TencentCloud/TencentDB-Agent-Memory/issues) — we respond within 24 hours.
 - 💡 **Have an idea to share?** Start a thread in [GitHub Discussions](https://github.com/TencentCloud/TencentDB-Agent-Memory/discussions).
 - 🛠️ **Want to contribute code?** Please read [CONTRIBUTING.md](./CONTRIBUTING.md) first.
-- 💬 **Want to chat with us?** Join our [Discord community](https://discord.gg/dJQM6mKMF) and talk to the core developers directly.
+- ☁️ **The cloud-hosted edition** is now live. If you're interested, fill out the questionnaire and we'll get in touch soon: **[Fill out the questionnaire](https://wj.qq.com/s2/27892273/3h5k/)**
+- 💬 **Want to chat with us?** Join our [Discord community](https://discord.gg/dJQM6mKMF) and talk to the core developers directly, or scan the QR code to join the **Agent Memory WeChat community** and talk with early developers.
+<p align="center"><img src="https://github.com/user-attachments/assets/7378eced-d9cd-4fca-a9df-04d7fd6223b0" width="200" alt="Agent Memory WeChat community QR code" /></p>
 
 ---
 

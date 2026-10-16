@@ -92,14 +92,20 @@ memory:
   # ── 存储后端 ──
   storeBackend: "sqlite"
 
-  embedding:
-    provider: "none"               # 默认关闭向量搜索, 仅用 BM25
+#  embedding:
+#    provider: "none"               # 默认关闭向量搜索, 仅用 BM25
     # 开启向量搜索示例:
     # provider: "openai"
     # baseUrl: "https://api.openai.com/v1"
     # apiKey: "${TDAI_LLM_API_KEY}"
     # model: "text-embedding-3-small"
     # dimensions: 1536
+  embedding:
+    provider: openai
+    baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+    apiKey: "${TDAI_LLM_API_KEY}"
+    model: text-embedding-v4
+    dimensions: 1024
 
   bm25:
     enabled: true

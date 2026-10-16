@@ -1,9 +1,9 @@
 /**
- * SourceFetcher 接口层 — 协议无关的源码拉取与安全校验抽象。
+ * SourceFetcher interface layer — protocol-agnostic abstraction for source fetching and security validation.
  *
- * 职责：把"从某个 source（git/local/ftp）拉取代码到本地目录"抽象成统一接口，
- * 安全校验（协议白名单 + SSRF 防护）集中在各实现的 validate() 里。
- * 具体实现（如 GitSourceFetcher）依赖 simple-git，但该依赖不泄漏到本接口层。
+ * Responsibility: abstract "fetch code from some source (git/local/ftp) into a local directory" into a unified interface;
+ * security validation (protocol allowlist + SSRF protection) lives in each implementation's validate().
+ * Concrete implementations (e.g. GitSourceFetcher) depend on simple-git, but that dependency does not leak into this interface layer.
  */
 
 import type { SshFetchOptions } from "./ssh-options.js";
@@ -11,48 +11,48 @@ import type { SshFetchOptions } from "./ssh-options.js";
 export type SourceType = "git" | "local" | "ftp";
 
 export interface FetchResult {
-  /** 源码落盘的本地目录（绝对路径）。 */
+  /** Local directory where the source is written (absolute path). */
   localPath: string;
-  /** 当前版本标识（git 为 commit hash 前 12 位；取不到为 null）。 */
+  /** Current version identifier (for git, the first 12 chars of the commit hash; null if unavailable). */
   version: string | null;
-  /** 源协议类型。 */
+  /** Source protocol type. */
   sourceType: SourceType;
 }
 
 /**
- * 拉取选项（协议特有）。
+ * Fetch options (protocol-specific).
  *
- * 设为**可选**是为了向后兼容既有调用与单测——HTTPS 公开仓/私有仓传 undefined，
- * 行为与改造前完全一致。
+ * **Optional** for backward compatibility with existing callers and unit tests — public/private HTTPS repos
+ * pass undefined and behave exactly as before.
  */
 export interface GitFetchOptions {
   /**
-   * SSH 拉取凭证。存在即注入 `GIT_SSH_COMMAND`（私钥路径 + known_hosts）。
-   * 仅当 sourceUrl 是 `git@` / `ssh://` 时有意义；HTTPS 下被忽略。
+   * SSH fetch credentials. When present, `GIT_SSH_COMMAND` is injected (private key path + known_hosts).
+   * Only meaningful when sourceUrl is `git@` / `ssh://`; ignored for HTTPS.
    */
   ssh?: SshFetchOptions;
 }
 
 /**
- * 源码拉取器接口。实现者负责：
- *   1. 校验 sourceUrl 安全性（协议白名单、SSRF 等）
- *   2. 拉取/同步源码到 localPath
- *   3. 返回版本标识
+ * Source fetcher interface. Implementers are responsible for:
+ *   1. Validating sourceUrl safety (protocol allowlist, SSRF, etc.)
+ *   2. Fetching/syncing source into localPath
+ *   3. Returning a version identifier
  *
- * 实现：
- *   - GitSourceFetcher：simple-git；支持 public/private HTTPS 与 SSH（GIT_SSH_COMMAND）
- *   - LocalSourceFetcher / FtpSourceFetcher：未来扩展
+ * Implementations:
+ *   - GitSourceFetcher: simple-git; supports public/private HTTPS and SSH (GIT_SSH_COMMAND)
+ *   - LocalSourceFetcher / FtpSourceFetcher: future extensions
  */
 export interface ISourceFetcher {
-  /** 首次拉取：把源码下载到 localPath。 */
+  /** Initial fetch: download the source into localPath. */
   fetch(sourceUrl: string, branch: string, localPath: string, opts?: GitFetchOptions): Promise<FetchResult>;
 
-  /** 增量同步：更新已存在的 localPath 到最新版本。 */
+  /** Incremental sync: update an existing localPath to the latest version. */
   sync(sourceUrl: string, branch: string, localPath: string, opts?: GitFetchOptions): Promise<FetchResult>;
 
-  /** 校验 sourceUrl 是否合法（协议白名单 + SSRF 防护）。非法则 throw。 */
+  /** Validate that sourceUrl is allowed (protocol allowlist + SSRF protection). Throws if invalid. */
   validate(sourceUrl: string): void;
 
-  /** 支持的协议类型。 */
+  /** Supported protocol type. */
   readonly supportedType: SourceType;
 }

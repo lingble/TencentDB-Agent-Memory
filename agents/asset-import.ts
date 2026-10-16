@@ -6,7 +6,6 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
-import { createRequire } from 'node:module';
 
 
 let KIND = 'openclaw';
@@ -282,7 +281,7 @@ function expandBlock(b: unknown): ContentFrag[] {
       // openclaw 工具调用：{type:'toolCall', id, name, arguments}
       case 'toolCall':
         return [{ role: 'tool_call', tool_call_id: strVal(bb.id), tool_name: strVal(bb.name) || 'unknown', content: (argsToString(bb.arguments ?? bb.input) as string) ?? '' }];
-      // anthropic / claude / codex / dsh / hermes 工具调用：{type:'tool_use', id, name, input}
+      // anthropic / claude / codex / dsh 工具调用：{type:'tool_use', id, name, input}
       case 'tool_use':
         return [{ role: 'tool_call', tool_call_id: strVal(bb.id), tool_name: strVal(bb.name) || 'unknown', content: (argsToString(bb.input ?? bb.arguments) as string) ?? '' }];
       // openai responses 工具调用：{type:'function_call', name, arguments(字符串), call_id?}
@@ -2248,303 +2247,6 @@ function scanSessionsOverride(kind: AgentKind, sessionsDir: string): ScannedSess
 }
   return { kind: KIND, scanSkills, scanSessions, scanSessionsOverride, detect };
 }
-function make_hermesAdapter(): IdeAdapter {
-const KIND = 'hermes' as const;
-
-const HERMES_EXCLUDED_SKILL_DIRS = new Set([
-  'node_modules', '.git', '.turbo', 'dist', 'build', 'out',
-  '.next', '.nuxt', '.svelte-kit', 'coverage', '.cache',
-  '.venv', 'venv', '__pycache__', 'target', 'bin', 'obj',
-  '.idea', '.vscode', '.DS_Store',
-]);
-const HERMES_SKILL_SUPPORT_DIRS = new Set(['support', '_support']);
-const HERMES_SKILL_RESOURCE_DIRS = new Set(['scripts', 'references', 'assets', 'agents']);
-
-function hermesHome(): string {
-  return process.env.HERMES_HOME || join(home(), '.hermes');
-}
-
-function walkHermesSkillMd(dir: string, out: string[]): void {
-  let entries: string[];
-  try {
-    entries = readdirSync(dir);
-  } catch {
-    return;
-  }
-  if (HERMES_EXCLUDED_SKILL_DIRS.has(basename(dir))) return;
-  for (const name of entries) {
-    const full = join(dir, name);
-    let st;
-    try {
-      st = statSync(full);
-    } catch {
-      continue;
-    }
-    if (st.isDirectory()) {
-      if (HERMES_EXCLUDED_SKILL_DIRS.has(name)) continue;
-      if (name.startsWith('.')) continue;
-      walkHermesSkillMd(full, out);
-    } else if (name === 'SKILL.md' && !isHermesSupportSkillMd(full)) {
-      out.push(full);
-    }
-  }
-}
-
-function isHermesSupportSkillMd(p: string): boolean {
-  const parent = basename(dirname(p));
-  const grand = basename(dirname(dirname(p)));
-  return HERMES_SKILL_SUPPORT_DIRS.has(parent) || HERMES_SKILL_SUPPORT_DIRS.has(grand);
-}
-
-/** 在 skill 根内递归找所有 SKILL.md（跳过 support 等），<name>/SKILL.md 归到 <name>。 */
-function collectHermesSkillsFromRoot(root: string): ScannedSkill[] {
-  if (!existsSync(root) || !statSync(root).isDirectory()) return [];
-  const out: ScannedSkill[] = [];
-  const seen = new Set<string>();
-  for (const entry of readdirSync(root)) {
-    if (entry.startsWith('.')) continue;
-    const dir = join(root, entry);
-    let st;
-    try {
-      st = statSync(dir);
-    } catch {
-      continue;
-    }
-    if (!st.isDirectory()) continue;
-    const mdPaths: string[] = [];
-    walkHermesSkillMd(dir, mdPaths);
-    if (mdPaths.length === 0) continue;
-    const skillMd = join(dir, 'SKILL.md');
-    const text = readIfExists(skillMd) ?? readIfExists(mdPaths[0]);
-    if (text == null) continue;
-    const name = skillNameFromContent(entry, text);
-    if (seen.has(name)) continue;
-    seen.add(name);
-    const resources: { path: string; content: string }[] = [];
-    for (const sub of HERMES_SKILL_RESOURCE_DIRS) collectSubfiles(dir, sub, resources);
-    out.push({ name, content: text, resources, sourceKey: `skill:${KIND}:${dir}` });
-  }
-  return out;
-}
-
-function hermesAgentRepo(): string | null {
-  const root = process.env.HERMES_AGENT_ROOT?.trim();
-  if (root) return resolve(root);
-  const candidate = join(hermesHome(), 'hermes-agent');
-  return existsSync(candidate) ? candidate : null;
-}
-
-function hermesBundledSkillRoots(): string[] {
-  const roots: string[] = [];
-  const envRoots = [
-    process.env.HERMES_BUNDLED_SKILLS?.trim(),
-    process.env.HERMES_OPTIONAL_SKILLS?.trim(),
-  ].filter(Boolean) as string[];
-  for (const e of envRoots) {
-    for (const part of e.split(',')) {
-      const p = part.trim();
-      if (p) roots.push(resolve(p));
-    }
-  }
-  const repo = hermesAgentRepo();
-  if (repo) {
-    roots.push(join(repo, 'skills'));
-    roots.push(join(repo, 'optional-skills'));
-  }
-  return roots;
-}
-
-/** Hermes skill 两层（用户自定义覆盖系统内置）：HOME/skills + 仓库 skills/optional-skills。 */
-function collectHermesSkills(): ScannedSkill[] {
-  const ranked = [join(hermesHome(), 'skills'), ...hermesBundledSkillRoots()];
-  const out: ScannedSkill[] = [];
-  const seen = new Set<string>();
-  const seenRoots = new Set<string>();
-  for (const root of ranked) {
-    const key = resolve(root);
-    if (seenRoots.has(key)) continue;
-    seenRoots.add(key);
-    for (const skill of collectHermesSkillsFromRoot(root)) {
-      if (seen.has(skill.name)) continue;
-      seen.add(skill.name);
-      out.push(skill);
-    }
-  }
-  return out;
-}
-
-function detect(): boolean {
-  return existsSync(join(home(), '.hermes'));
-}
-
-function scanSkills(_opts?: ScanOptions): ScannedSkill[] {
-  return collectHermesSkills();
-}
-
-function scanMemoryFiles(opts?: ScanOptions): ScannedMemoryFile[] {
-  const h = home();
-  const hermesHome = process.env.HERMES_HOME || join(h, '.hermes');
-  const out: ScannedMemoryFile[] = [];
-  const push = (p: string) => {
-    const text = readIfExists(p);
-    if (text == null || !text.trim()) return;
-    out.push({ messages: [{ role: 'user', content: text }], sourceKey: `memory:${KIND}:${p}`, origin: p });
-  };
-  push(join(hermesHome, 'USER.md'));
-  const mem = join(hermesHome, 'memories');
-  if (existsSync(mem)) for (const f of listMdRecursive(mem)) push(f);
-  return out;
-}
-
-function scanSessions(sessionsDir?: string, _opts?: ScanOptions): ScannedSession[] {
-  if (sessionsDir) return scanSessionsOverride(KIND, sessionsDir);
-  const out: ScannedSession[] = [];
-  const hermesHome = process.env.HERMES_HOME || join(home(), '.hermes');
-  const dbPath = join(hermesHome, 'state.db');
-  if (!existsSync(dbPath)) return out;
-  let db: unknown;
-  try {
-    const require = createRequire(import.meta.url);
-    let sqlite: { DatabaseSync?: unknown; Database?: unknown; default?: { Database?: unknown } };
-    try {
-      sqlite = require('node:sqlite');
-    } catch {
-      // node:sqlite 是 Node >= 22.5 的实验性内置模块；老版本无此模块，
-      // 直接跳过 db 会话扫描（skills/memory 不受影响），不打印警告。
-      return out;
-    }
-    const Database = sqlite.DatabaseSync ?? sqlite.Database ?? sqlite.default?.Database;
-    db = new Database(dbPath, { readOnly: true });
-  } catch (e) {
-    console.warn(`[warn] 无法打开 state.db (${dbPath}): ${(e as Error).message}`);
-    return out;
-  }
-  try {
-    const rows = (db as { prepare: (s: string) => { all: () => unknown[] } }).prepare(
-      'SELECT session_id, role, content, tool_call_id, tool_calls, tool_name, timestamp FROM messages ORDER BY session_id, id'
-    ).all() as Array<{ session_id: string; role: string; content: unknown; tool_call_id?: string | null; tool_calls?: string | null; tool_name?: string | null; timestamp?: number | null }>;
-    const bySession = new Map<string, ImportMessage[]>();
-    for (const r of rows) {
-      const msgs = hermesRowToMessages(r);
-      if (!msgs.length) continue;
-      if (!bySession.has(r.session_id)) bySession.set(r.session_id, []);
-      bySession.get(r.session_id)!.push(...msgs);
-    }
-    for (const [sid, msgs] of bySession) {
-      // 补 recIdx：否则 toMemoryMessages 会按 recIdx ?? -1 把所有消息塌缩成一条。
-      msgs.forEach((m, i) => { m.recIdx = i; });
-      if (msgs.length) out.push({ sessionId: sid, messages: msgs, sourceKey: `session:${KIND}:${dbPath}#${sid}`, origin: dbPath });
-    }
-  } catch (e) {
-    console.warn(`[warn] 读取 state.db 失败 (${dbPath}): ${(e as Error).message}`);
-  } finally {
-    try { (db as { close?: () => void }).close?.(); } catch { /* ignore */ }
-  }
-  return out;
-}
-
-/**
- * 把 hermes state.db 的一行 message 归一化成 pipeline 内部的 ImportMessage[]。
- * 关键点：hermes 把工具结果存为 role='tool'（OpenAI 风格），且把配对信息单独存进
- * tool_call_id / tool_calls / tool_name 列。必须归一化为 tool_call/tool_result + tool_call_id 配对，否则：
- *  - skill 链路收到裸 'tool' 角色（不在 user/assistant/tool_call/tool_result/system）→ 40001；
- *  - memory 链路收到裸 'tool' 角色（不在 user/assistant/system）→ 400。
- * 同时补 memRole，使 memory 链路映射出合法角色（tool_result→user、tool_call→assistant）。
- */
-function hermesRowToMessages(r: {
-  role: string;
-  content: unknown;
-  tool_call_id?: string | null;
-  tool_calls?: string | null;
-  tool_name?: string | null;
-  timestamp?: number | null;
-}): ImportMessage[] {
-  const content = extractText(r.content);
-  if (!content) return [];
-  const ts = typeof r.timestamp === 'number' ? Math.round(r.timestamp * 1000) : undefined;
-
-  // assistant 带 tool_calls：拆成 assistant 文本 + 若干 tool_call
-  if (r.role === 'assistant' && r.tool_calls) {
-    let calls: any[] = [];
-    try { calls = JSON.parse(r.tool_calls); } catch { /* ignore */ }
-    if (Array.isArray(calls) && calls.length) {
-      const out: ImportMessage[] = [];
-      if (content.trim()) out.push({ role: 'assistant', content, ts, memRole: 'assistant', hasToolUse: true });
-      for (const c of calls) {
-        const args = c?.arguments ?? c?.input ?? c?.function?.arguments ?? c;
-        out.push({
-          role: 'tool_call',
-          content: typeof args === 'string' ? args : JSON.stringify(args ?? ''),
-          tool_call_id: c?.id ?? c?.tool_call_id ?? undefined,
-          tool_name: c?.name ?? c?.function?.name ?? undefined,
-          ts,
-          memRole: 'assistant',
-          hasToolUse: true,
-        });
-      }
-      return out;
-    }
-  }
-
-  // 工具结果：hermes 存为 role='tool' → 归一化为 tool_result（带配对锚点）
-  if (r.role === 'tool') {
-    return [{
-      role: 'tool_result',
-      content,
-      tool_call_id: r.tool_call_id ?? undefined,
-      tool_name: r.tool_name ?? undefined,
-      ts,
-      memRole: 'user',
-    }];
-  }
-
-  // user / assistant / system 原样保留，并补 memRole
-  const memRole = r.role === 'system' ? 'system' : r.role === 'assistant' ? 'assistant' : 'user';
-  return [{ role: r.role, content, ts, memRole }];
-}
-
-
-function scanSessionsOverride(kind: AgentKind, sessionsDir: string): ScannedSession[] {
-  const out: ScannedSession[] = [];
-  if (!existsSync(sessionsDir)) return out;
-  const st = statSync(sessionsDir);
-  const jsonlFiles = st.isDirectory()
-    ? listJsonlRecursive(sessionsDir)
-    : sessionsDir.endsWith('.jsonl')
-      ? [sessionsDir]
-      : [];
-  const jsonFiles = st.isDirectory()
-    ? readdirSync(sessionsDir)
-        .filter((f) => f.endsWith('.json'))
-        .map((f) => join(sessionsDir, f))
-    : sessionsDir.endsWith('.json')
-      ? [sessionsDir]
-      : [];
-  for (const full of jsonlFiles) {
-    const text = readFileSync(full, 'utf-8');
-    const msgs = parseJsonlLines(text);
-    if (!msgs.length) continue;
-    out.push({
-      sessionId: extractCodexSessionId(full, text),
-      messages: msgs,
-      sourceKey: `session:${kind}:${full}`,
-      origin: full,
-    });
-  }
-  for (const full of jsonFiles) {
-    const msgs = normalizeResponsesJson(full);
-    if (!msgs.length) continue;
-    out.push({
-      sessionId: basename(full, '.json'),
-      messages: msgs,
-      sourceKey: `session:${kind}:${full}`,
-      origin: full,
-    });
-  }
-  return out;
-}
-  return { kind: KIND, scanSkills, scanSessions, scanSessionsOverride, detect };
-}
 function make_workbuddyAdapter(): IdeAdapter {
 const KIND = 'workbuddy' as const;
 
@@ -2660,7 +2362,7 @@ function scanSessionsOverride(kind: AgentKind, sessionsDir: string): ScannedSess
 }
 
 export const ADAPTERS: Record<string, IdeAdapter> = {
-  openclaw: make_openclawAdapter(), codebuddy: make_codebuddyAdapter(), codex: make_codexAdapter(), 'claude-code': make_claude_codeAdapter(), dsh: make_dshAdapter(), hermes: make_hermesAdapter(), workbuddy: make_workbuddyAdapter(),
+  openclaw: make_openclawAdapter(), codebuddy: make_codebuddyAdapter(), codex: make_codexAdapter(), 'claude-code': make_claude_codeAdapter(), dsh: make_dshAdapter(), workbuddy: make_workbuddyAdapter(),
 };
 
 /** 各 adapter 在项目目录（cwd）下的专属 marker 目录（用于「项目本地优先」判定）。 */
@@ -2670,7 +2372,6 @@ const CWD_MARKER_DIRS: Record<string, string[]> = {
   codex: ['.agents'],
   'claude-code': ['.claude'],
   dsh: ['.dsh'],
-  hermes: ['.hermes'],
   workbuddy: ['.workbuddy', 'workbuddy'],
 };
 

@@ -47,6 +47,5 @@ export const DEFAULT_SUPPORTED_AGENTS_FALLBACK: readonly SupportedAgent[] = Obje
   { agent_source: "dsh",         protocol: "openai-chat",      display_name: "DeepSeek Harness" },
   { agent_source: "opencode",    protocol: "openai-chat",      display_name: "OpenCode" },
   { agent_source: "pi",          protocol: "openai-chat",      display_name: "Pi" },
-  { agent_source: "hermes",      protocol: "anthropic",        display_name: "Hermes" },
   { agent_source: "openclaw",    protocol: "anthropic",        display_name: "OpenClaw" },
 ]) as readonly SupportedAgent[];

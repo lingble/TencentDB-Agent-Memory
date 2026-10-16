@@ -1,14 +1,14 @@
 /**
- * TaskWorkbench — 用户工作台。
+ * TaskWorkbench — user workbench.
  *
- * 收敛到两件事：
- *   1. 列出/创建/管理本团队下的 task；
- *   2. 通过 log tab 看 task 历史记录。
+ * Focused on two things:
+ *   1. List/create/manage tasks under this team;
+ *   2. View task history through the log tab.
  *
- * 布局：进入页面为全宽卡片网格；点击卡片拉出 Drawer，在抽屉内查看详情与设置
- * （改状态、编辑标题/描述、删除）。
+ * Layout: the page opens as a full-width card grid; clicking a card opens a Drawer to view details and settings
+ * (change status, edit title/description, delete).
  *
- * 数据走后端链路 A（services/backendStore.ts，内部调用 @/lib/teamApi 的 meta 接口）。
+ * Data goes through backend path A (services/backendStore.ts, which calls the meta APIs in @/lib/teamApi).
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -51,36 +51,36 @@ function EmptyTeam() {
 export default function TaskWorkbench(props: {
   tab?: WorkbenchTab;
   onTabChange?: (tab: WorkbenchTab) => void;
-  /** 当前激活的 team id（可空：未选时只显示 empty state） */
+  /** Currently active team id (nullable: when none is selected only the empty state is shown) */
   activeTeamId: string | null;
-  /** 当前用户名（task 的 creator_user_id） */
+  /** Current username (the task's creator_user_id) */
   currentUser: string;
-  /** 当前 team 下可关联的 Agent 列表（来自 TeamManagementPanel 的同源数据） */
+  /** Agents that can be linked under the current team (same source data as TeamManagementPanel) */
   agents: AgentOption[];
-  /** 是否为全局 admin（保留接口兼容；admin 不再有 task 特权） */
+  /** Whether the user is a global admin (kept for interface compatibility; admin no longer has task privileges) */
   isAdmin?: boolean;
 }) {
   const { t } = useTranslation();
   const { activeTeamId, currentUser, agents } = props;
-  // 后端分页：useTasks 根据 page + pageSize 调 Panel 聚合接口，内核只返回当前页
+  // Backend pagination: useTasks calls the Panel aggregation API with page + pageSize; the kernel only returns the current page
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(12);
   const { tasks, total: tasksTotal, loading: tasksLoading } = useTasks(activeTeamId, currentPage, pageSize);
   const { teams, activeTeam } = useTeams();
   const participationByTask = useTeamParticipation(activeTeamId);
   const [showCreate, setShowCreate] = useState(false);
-  /** 当前正在导入的来源 id（非空即弹窗打开）。由「导入 Task」下拉框选中项决定。 */
+  /** Source id currently being imported (non-empty means the dialog is open). Determined by the item selected in the "Import Task" dropdown. */
   const [importProviderId, setImportProviderId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  /** 已启用的外部来源。空数组 → BoardView 隐藏「导入 Task」入口。 */
+  /** Enabled external sources. Empty array -> BoardView hides the "Import Task" entry. */
   const [providers, setProviders] = useState<TaskSourceProvider[]>([]);
 
-  // 切换 team 时重置到第 1 页
+  // Reset to page 1 when switching teams
   useEffect(() => { setCurrentPage(1); }, [activeTeamId]);
 
-  // 越界页码拉回：总数收缩（删掉末页最后几条 / 页长调大后页数变少）时，
-  // 若 currentPage 仍停在失效页，fetch 会用越界 offset 拿到空数组，
-  // 看板会错误地显示「暂无 task」空态 —— 这里把页码拉回有效末页。
+  // Pull out-of-range page numbers back: when the total shrinks (deleting the last items on the final page / increasing page size reduces page count),
+  // if currentPage is still on an invalid page, the fetch uses an out-of-range offset and gets an empty array,
+  // and the board would wrongly show the "No tasks" empty state; so pull the page back to the last valid page.
   const totalPages = Math.max(1, Math.ceil(tasksTotal / pageSize));
   useEffect(() => {
     if (!tasksLoading && tasksTotal > 0 && currentPage > totalPages) {
@@ -88,7 +88,7 @@ export default function TaskWorkbench(props: {
     }
   }, [tasksLoading, tasksTotal, currentPage, totalPages]);
 
-  // 拉取已启用的外部来源。失败静默（未配置来源时本就不显示入口，不打扰用户）。
+  // Fetch enabled external sources. Fails silently (with no sources configured the entry isn't shown anyway, so don't bother the user).
   useEffect(() => {
     if (!activeTeamId) return;
     let alive = true;
@@ -109,11 +109,11 @@ export default function TaskWorkbench(props: {
   );
 
   /**
-   * 创建 task：team_id 完全由当前激活 team 决定，不再让 dialog 选 team
-   * （切 team 的唯一入口在右上角全局 TeamSwitcher）。
+   * Create task: team_id is determined entirely by the currently active team; the dialog no longer lets you pick a team
+   * (the only way to switch teams is the global TeamSwitcher in the top right).
    */
   async function handleCreate(draft: TaskDraft) {
-    // 谁点击「创建 Task」，谁就是 creator_user_id。
+    // Whoever clicks "Create Task" is the creator_user_id.
     const team = teams.find((t) => t.team_id === draft.team_id);
     if (!team) {
       tea.notify.error(`team "${draft.team_id}" ${t('task.emptyTeam.title')}`);
@@ -142,7 +142,7 @@ export default function TaskWorkbench(props: {
         <EmptyTeam />
       ) : (
         <>
-          {/* 当前 team 概览（与 team 管理页同一组件） */}
+          {/* Current team overview (same component as the team management page) */}
           {activeTeam && <TeamHeaderCard team={activeTeam} />}
           <BoardView
           tasks={sortedTasks}
@@ -155,12 +155,12 @@ export default function TaskWorkbench(props: {
           selected={selected}
           onSelect={(id) => setSelectedId(id)}
           onCreate={() => setShowCreate(true)}
-          // 下拉选源：把选中的 provider_id 传上来，据此打开对应来源的导入弹窗。
-          // 未启用外部来源时传 undefined → 入口隐藏。
+          // Source dropdown: pass the selected provider_id up, and open the import dialog for that source.
+          // When no external source is enabled, pass undefined -> the entry is hidden.
           onImport={providers.length ? (providerId) => setImportProviderId(providerId) : undefined}
           importSources={providers.map((p) => ({ id: p.id }))}
           onDelete={async (task) => {
-            // 权限：删除 task 仅创建者 / team admin / 全局 admin
+            // Permission: deleting a task is limited to the creator / team admin / global admin
             const team = teams.find((t) => t.team_id === task.team_id) ?? null;
             if (!canDeleteTask(task, team, currentUser)) {
               tea.notify.warning(
@@ -184,7 +184,7 @@ export default function TaskWorkbench(props: {
             }
           }}
           onUpdateStatus={async (task, status) => {
-            // 权限：编辑 task（含切换 status）允许 team 内任意 member / admin
+            // Permission: editing a task (including switching status) is allowed for any member / admin in the team
             const team = teams.find((t) => t.team_id === task.team_id) ?? null;
             if (!canEditTask(task, team, currentUser)) {
               tea.notify.warning(t('task.noPermissionEdit'));
@@ -217,8 +217,8 @@ export default function TaskWorkbench(props: {
       )}
 
       {showCreate && activeTeam && (
-        // team 由右上角全局 TeamSwitcher 决定，dialog 里不再让用户选；
-        // 这里 activeTeam 必为非空，因为上面 !activeTeamId 分支已经走 EmptyTeam 了
+        // The team is decided by the global TeamSwitcher in the top right; the dialog no longer lets the user choose;
+        // activeTeam is guaranteed non-null here, because the !activeTeamId branch above already renders EmptyTeam
         <TaskCreateDialog
           team={{ team_id: activeTeam.team_id, name: activeTeam.name }}
           onClose={() => setShowCreate(false)}
@@ -231,7 +231,7 @@ export default function TaskWorkbench(props: {
           providers={providers}
           providerId={importProviderId}
           onClose={() => setImportProviderId(null)}
-          // 导入后清缓存 + 广播，触发 useTasks 重新拉取（与其他写操作同一机制）
+          // After import, clear the cache + broadcast to trigger a useTasks refetch (same mechanism as other writes)
           onImported={() => invalidateBackendCache()}
         />
       )}

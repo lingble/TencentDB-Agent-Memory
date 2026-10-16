@@ -17,7 +17,7 @@ function truncate(s: string, max: number): string {
   return s.length <= max ? s : s.slice(0, max) + `…[+${s.length - max}]`;
 }
 
-/** 提取 request body 的关键字段（避免打全量，只打 ID 类字段便于关联）。 */
+/** Extract key fields from the request body (avoid logging everything; log only ID-like fields for correlation). */
 function pickReqFields(body: unknown): Record<string, unknown> {
   if (!body || typeof body !== 'object') return {};
   const b = body as Record<string, unknown>;
@@ -37,7 +37,7 @@ export function accessLog(): MiddlewareHandler {
     const requestId = c.req.header("x-request-id") || crypto.randomUUID();
     c.set("requestId", requestId);
 
-    // 缓存 request body（body 只能读一次，失败时用于日志）
+    // Cache the request body (it can only be read once; used for logging on failure)
     // c.req.text() already caches the body through Hono; do not overwrite its cache.
     let reqBody: unknown = undefined;
     if (c.req.method === 'POST' || c.req.method === 'PUT') {
@@ -45,7 +45,7 @@ export function accessLog(): MiddlewareHandler {
         const raw = await c.req.text();
         reqBody = raw ? JSON.parse(raw) : undefined;
       } catch {
-        // 非 JSON body，忽略
+        // Non-JSON body, ignore
       }
     }
 
@@ -56,20 +56,20 @@ export function accessLog(): MiddlewareHandler {
     log.info(`${route} → ${status} (${ms}ms)`);
 
     if (status >= 400) {
-      // 失败时打 request 关键字段 + response body（截断）
+      // On failure, log request key fields + response body (truncated)
       const fields = pickReqFields(reqBody);
       const logExtra: Record<string, unknown> = { status, ...fields };
 
       try {
         const respText = await c.res.text();
         logExtra.responseBody = truncate(respText, MAX_BODY_LOG);
-        // 重建 response（text() 消费了 body）
+        // Rebuild the response (text() consumed the body)
         c.res = new Response(respText, {
           status: c.res.status,
           headers: c.res.headers,
         });
       } catch {
-        // response body 读不了就算了
+        // If the response body can't be read, give up
       }
 
       log.warn(`${route} error`, logExtra);

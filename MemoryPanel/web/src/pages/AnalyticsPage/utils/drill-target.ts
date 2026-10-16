@@ -1,10 +1,10 @@
 /**
- * 下钻目标定义 —— 统一「点哪里、看什么」。
+ * Drill-down target definitions - unifying "where you click, what you see".
  *
- * 三类下钻各自能用的数据源不同，由 drillTabs() 决定抽屉内可选视角：
- *   - member  ：既有行为（tool-calls 按 user_id）也有成本（usage 按 user_id）→ 两个视角
- *   - category：只有行为（tool-calls 按 bridge_source）；usage_logs 无资产类别维度
- *   - model   ：只有成本（usage 按 model_id）；tool_call 表不记录 model_id
+ * The three drill-down kinds have different data sources; drillTabs() decides the views available in the drawer:
+ *   - member  : has both behavior (tool-calls by user_id) and cost (usage by user_id) → two views
+ *   - category: behavior only (tool-calls by bridge_source); usage_logs has no asset category dimension
+ *   - model   : cost only (usage by model_id); the tool_call table doesn't record model_id
  */
 import type { AssetCategory } from '../utils/asset-category';
 
@@ -15,7 +15,7 @@ export type DrillTarget =
 
 export type DrillView = 'trace' | 'usage';
 
-/** 该下钻目标支持的视角（顺序即 Tab 顺序，首项为默认）。 */
+/** Views supported by this drill-down target (order = Tab order, first is the default). */
 export function drillViews(target: DrillTarget): DrillView[] {
   switch (target.type) {
     case 'member':

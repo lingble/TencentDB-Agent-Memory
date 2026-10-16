@@ -2,7 +2,7 @@
  * TDAI Core — Host-neutral type definitions and abstract interfaces.
  *
  * These types define the boundary between TDAI Core (memory algorithms)
- * and the host environment (OpenClaw, Hermes, standalone Gateway, etc.).
+ * and the host environment (OpenClaw, standalone Gateway, etc.).
  *
  * Design principles:
  * 1. TDAI Core depends ONLY on these interfaces — never on a specific host.
@@ -35,7 +35,6 @@ export interface Logger {
  * Unified runtime context — provides identity, scoping, and path information.
  *
  * In OpenClaw: populated from `pluginConfig`, `sessionKey`, `resolveStateDir()`.
- * In Hermes:   populated from `MemoryProvider.initialize()` kwargs.
  * In Gateway:  populated from HTTP request parameters.
  */
 export interface RuntimeContext {
@@ -174,7 +173,7 @@ export function buildTraceParams(traceName: string, ctx?: TraceContext): {
  *
  * Implementations:
  * - `OpenClawLLMRunner`: wraps `CleanContextRunner` / `runEmbeddedPiAgent` (OpenClaw host)
- * - `StandaloneLLMRunner`: direct OpenAI-compatible HTTP calls (Gateway / Hermes host)
+ * - `StandaloneLLMRunner`: direct OpenAI-compatible HTTP calls (Gateway host)
  */
 export interface LLMRunner {
   /**
@@ -228,7 +227,7 @@ export interface LLMRunnerFactory {
  *
  * Each host environment provides exactly one HostAdapter implementation:
  * - OpenClaw:    `OpenClawHostAdapter` — wraps `OpenClawPluginApi`
- * - Hermes/GW:   `StandaloneHostAdapter` — wraps Gateway HTTP request context
+ * - Gateway:     `StandaloneHostAdapter` — wraps Gateway HTTP request context
  *
  * HostAdapter answers these questions for TDAI Core:
  * - "Who is the current user/session?" → `getRuntimeContext()`

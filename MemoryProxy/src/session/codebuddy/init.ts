@@ -867,10 +867,9 @@ async function handleSessionInitInner(
     }
 
     // ── Header-only agent short-circuit ────────────────────────────────────
-    // pi / hermes / openclaw 客户端只通过请求头预选身份,没有交互 form UI:
+    // pi / openclaw 客户端只通过请求头预选身份,没有交互 form UI:
     //   - pi:       openai-chat, body.tools 不含 ask_followup_question
-    //   - hermes:   anthropic, 客户端不挂 ask-user tool
-    //   - openclaw: 同 hermes
+    //   - openclaw: anthropic, 客户端不挂 ask-user tool
     // preset 任何失败场景(缺失 / mismatch / 只对上 team 没对上 agent / feature
     // 未开)都必须 bypass —— 绝不能落到下面弹 ask_followup_question tool_call 的
     // 分支,那会让客户端渲染成 unknown tool 报错(用户实测:pi 页面直接崩)。

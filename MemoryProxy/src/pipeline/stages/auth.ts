@@ -57,6 +57,10 @@ export function extractApiKeyFromContext(
   c: Context,
   mode: ApiKeyExtractionMode = "bearer-first",
 ): string {
+  // 显式 x-tdai-user-key 优先: 客户端用自己的上游凭据（如 Claude 订阅 OAuth token
+  // 占用 Authorization）时，sk-mem key 走这个头。该头在转发上游前会被剥离。
+  const tdaiUserKey = c.req.header("x-tdai-user-key")?.trim();
+  if (tdaiUserKey) return tdaiUserKey;
   const xApiKey = c.req.header("x-api-key");
   const bearer = extractBearerToken(
     c.req.header("authorization") ?? c.req.header("Authorization") ?? "",

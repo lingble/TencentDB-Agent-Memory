@@ -19,7 +19,7 @@ const PORT = Number(process.env.MOCK_PORT || 18500);
 const MODE = process.env.MOCK_MODE || "blocked-default";
 
 function rowsFor(mode) {
-  const allAgents = ["claude-code", "codebuddy", "codex", "workbuddy", "dsh", "opencode", "pi", "hermes", "openclaw"];
+  const allAgents = ["claude-code", "codebuddy", "codex", "workbuddy", "dsh", "opencode", "pi", "openclaw"];
   if (mode === "blocked-default") {
     return [{
       id: 1, group_id: "dflt-mock", group_type: "default", name: "mock-default",

@@ -413,7 +413,7 @@ const routeTable: Record<string, Handler> = {
   // 全部写入路径都传 supportedAgents 是为了兜底存量实例首个请求非 list 时的 seed
   // (见 §11.11f 决策 + docs/design 2026-08-25 §5.5 存量实例兜底):
   // Panel 用户可能直接进入 "extraction 新建" 或 "新建 custom",跳过 list,
-  // 若不 seed default 行,后续 hermes/其他 agent 请求会 AGENT_NOT_CONFIGURED。
+  // 若不 seed default 行,后续 agent 请求会 AGENT_NOT_CONFIGURED。
   // extraction/get 不写入,也无 seed 需求,保持只读语义。
   [`${V3_PREFIX}/instance-upstream/extraction/get`]: bind(S.upstreamExtractionGetSchema, async (_d, c, s, _reqId, deps) => {
     s.assertCanManageUsers(c);

@@ -1,5 +1,5 @@
 /**
- * TDAI Gateway — HTTP server for the Hermes sidecar.
+ * TDAI Gateway — standalone HTTP server.
  *
  * Exposes TDAI Core capabilities as HTTP endpoints:
  *   GET  /health              — Health check
@@ -11,7 +11,6 @@
  *   POST /seed               — Batch seed historical conversations (L0 → L1)
  *
  * Built with Node.js native `http` module — no Express/Fastify dependency.
- * Designed to run as a managed sidecar alongside Hermes.
  */
 
 import http from "node:http";

@@ -1,8 +1,8 @@
 # tencentdb-agent-memory-sdk-python
 
-Python SDK for the **TencentDB Agent Memory v2 API**.
+Python SDK for **TencentDB Agent Memory**, supporting both the v2 and v3 APIs.
 
-Provides synchronous (`MemoryClient`) and asynchronous (`AsyncMemoryClient`) clients.
+Provides synchronous (`MemoryClient`) and asynchronous (`AsyncMemoryClient`) clients. The top-level `tencentdb_agent_memory.MemoryClient` / `AsyncMemoryClient` point to v2, so existing code keeps working after an SDK upgrade; import from `tencentdb_agent_memory.v3` to use the strict-isolation v3 clients.
 
 > **Distribution name**: `tencentdb-agent-memory-sdk-python` (PyPI / `pip install`)
 > **Import path**: `tencentdb_agent_memory` (Python module)
@@ -50,11 +50,11 @@ scenarios = client.list_scenarios(path_prefix="")
 print(scenarios["entries"])
 
 # L2: read a scenario file
-file = client.read_scenario("工作.md")
+file = client.read_scenario("work.md")
 print(file["content"])
 
 # L2: update a scenario file (must already exist)
-client.write_scenario("工作.md", "# Updated content", summary="new summary")
+client.write_scenario("work.md", "# Updated content", summary="new summary")
 
 # L3: read core memory (persona)
 core = client.read_core()
@@ -81,7 +81,7 @@ compacted = client.offload_compact(
 print(compacted["messages"], compacted["report"])
 
 # Read memory pipeline artifacts (e.g. persona.md, scene_blocks/*.md)
-raw = client.read_file("scene_blocks/工作.md")
+raw = client.read_file("scene_blocks/work.md")
 ```
 
 ## Async Usage
@@ -104,6 +104,38 @@ asyncio.run(main())
 
 ## API Methods
 
+### v3 (recommended)
+
+`tencentdb_agent_memory.v3.MemoryClient` / `AsyncMemoryClient` require `team_id`, `agent_id`, and `user_id` at construction. Request paths move from `/v2/*` to `/v3/*`; the response envelope is unchanged.
+
+| Layer | Method | Endpoint |
+|-------|--------|----------|
+| L0 | `add_conversation()` | `POST /v3/conversation/add` |
+| L0 | `query_conversation()` | `POST /v3/conversation/query` |
+| L0 | `search_conversation()` | `POST /v3/conversation/search` |
+| L0 | `delete_conversation()` | `POST /v3/conversation/delete` |
+| L0 | `count_conversation()` | `POST /v3/conversation/count` |
+| L1 | `update_atomic()` | `POST /v3/atomic/update` |
+| L1 | `query_atomic()` | `POST /v3/atomic/query` |
+| L1 | `search_atomic()` | `POST /v3/atomic/search` |
+| L1 | `delete_atomic()` | `POST /v3/atomic/delete` |
+| L1 | `count_atomic()` | `POST /v3/atomic/count` |
+| L2 | `list_scenarios()` | `POST /v3/scenario/ls` |
+| L2 | `read_scenario()` | `POST /v3/scenario/read` |
+| L2 | `write_scenario()` | `POST /v3/scenario/write` |
+| L2 | `rm_scenario()` | `POST /v3/scenario/rm` |
+| L2 | `count_scenario()` | `POST /v3/scenario/count` |
+| L3 | `read_core()` | `POST /v3/core/read` |
+| L3 | `write_core()` | `POST /v3/core/write` |
+| L3 | `count_core()` | `POST /v3/core/count` |
+| Asset | `clear_chat_memory()` | `POST /v3/chat-memory/clear` |
+
+Offload (`offload_*`) and `read_file` are not exposed on the v3 client; keep using the v2 client for them.
+
+### v2 (compatibility)
+
+v2 L0/L1 do not require `session_id`; isolation is based only on the `(team_id, user_id, agent_id)` triple.
+
 | Layer | Method | Endpoint |
 |-------|--------|----------|
 | L0 | `add_conversation()` | `POST /v2/conversation/add` |
@@ -123,6 +155,16 @@ asyncio.run(main())
 | Offload | `offload_ingest()` | `POST /v2/offload/ingest` |
 | Offload | `offload_compact()` | `POST /v2/offload/compact` |
 | Offload | `offload_query_mmd()` | `POST /v2/offload/query-mmd` |
+
+### v3 vs v2
+
+| Aspect | v2 | v3 |
+|--------|----|----|
+| Path prefix | `/v2/*` | `/v3/*` |
+| Isolation | `(team_id, user_id, agent_id)` triple | Triple required at construction (the server returns 422 if any is missing), plus optional `session_id` |
+| `session_id` | Optional | Required for `add_conversation` (constructor or call argument). Optional for L0/L1 reads (query / search / count / delete): when given, results are scoped to that session; otherwise they aggregate across sessions for the (team, agent, user) |
+| L2/L3 | Triple isolation only | Triple isolation only (unchanged; `session_id` is not used) |
+| Response envelope | `{ code, message, data, request_id }` | Same as v2 |
 
 ### v3 batch delete and clear
 
@@ -177,6 +219,7 @@ prompts = MemoryPromptClient(endpoint, api_key, service_id, team_id="team-1", ag
 created = prompts.create(name="decisions", layer="l1", prompt="Focus on decisions.")
 prompts.apply(created["memory_prompt_id"], layer="l1", agent_ids=["agent-1"])
 effective = prompts.get_effective(layer="l1")
+settings = prompts.list_settings(memory_prompt_id=created["memory_prompt_id"], layer="l1")
 
 logs = MemoryGenerationLogClient(endpoint, api_key, service_id)
 provenance = logs.get_by_memory_id("memory-id", "l1")
@@ -204,6 +247,8 @@ settings = prompts.list_settings(
 )
 ```
 
+With no filters, `list_settings()` lists every binding in the current Instance; pass `memory_prompt_id` to find which targets a Prompt is bound to. `agent_id` requires `team_id`.
+
 Async variants are exported as `AsyncMemoryPromptClient` and `AsyncMemoryGenerationLogClient`.
 
 ## MetadataClient (v3 management plane)
@@ -217,12 +262,12 @@ import os
 
 from tencentdb_agent_memory.v3 import MetadataClient
 
-auth = os.environ["KERNEL_AUTH_TOKEN"]
+auth = os.environ["KERNEL_AUTH_TOKEN"]  # Gateway Bearer token; do not hard-code
 meta = MetadataClient(
     "http://127.0.0.1:8420",
     auth,
     "knowledge-debug",  # x-tdai-service-id
-    # user_key=os.getenv("TDAI_USER_KEY"),
+    # user_key=os.getenv("TDAI_USER_KEY"),  # optional; sent as x-tdai-user-key, needed only for system_admin endpoints
 )
 
 # Register a wiki knowledge source

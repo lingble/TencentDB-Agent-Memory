@@ -465,8 +465,7 @@ export class MemoryPipelineManager {
    *   - ``flushSession`` only processes the one session identified by
    *     ``sessionKey`` and leaves every other session's timers, buffers
    *     and pipeline state untouched.  This is the correct semantic for
-   *     the Gateway's ``POST /session/end`` endpoint and for Hermes'
-   *     ``on_session_end`` callback, which fire when one conversation
+   *     the Gateway's ``POST /session/end`` endpoint, which fires when one conversation
    *     ends while the process keeps serving other concurrent sessions.
    *
    * What it does:

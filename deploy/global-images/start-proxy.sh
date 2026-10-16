@@ -73,6 +73,27 @@ fi
 
 bool() { [[ "$1" == "1" ]] && echo "true" || echo "false"; }
 
+# ── Claude Code 订阅透传（团队远程部署用，默认关）──
+# PROXY_CLAUDE_CODE_PASSTHROUGH=1：/claude-code/* 直连 api.anthropic.com，且不配 apiKey，
+# 客户端自己的 Claude 登录凭据（OAuth / API key）原样透传；sk-mem key 走 x-tdai-user-key 头。
+# PROXY_CLAUDE_CODE_UPSTREAM_URL 可覆盖上游地址。
+PROXY_CLAUDE_CODE_PASSTHROUGH="${PROXY_CLAUDE_CODE_PASSTHROUGH:-0}"
+UPSTREAM_AGENTS_YAML="  agents: {}"
+if [[ "$PROXY_CLAUDE_CODE_PASSTHROUGH" == "1" ]]; then
+  UPSTREAM_AGENTS_YAML="  agents:
+    claude-code:
+      url: \"${PROXY_CLAUDE_CODE_UPSTREAM_URL:-https://api.anthropic.com}\""
+  info "claude-code 透传上游: ${PROXY_CLAUDE_CODE_UPSTREAM_URL:-https://api.anthropic.com}（使用客户端自带凭据）"
+fi
+
+# proxy 运维口（/v3/admin/*、/v3/instance/proxy-destroy）鉴权；空 = 公开。
+# 非本机访问的部署必须设置。
+TDAI_PROXY_ADMIN_API_KEY="${TDAI_PROXY_ADMIN_API_KEY:-}"
+# 设了 BIND_HOST 视为服务器部署（即使绑 127.0.0.1，前面通常还有反代对外）。
+if [[ -z "$TDAI_PROXY_ADMIN_API_KEY" && -n "${BIND_HOST:-}" ]]; then
+  warn "TDAI_PROXY_ADMIN_API_KEY 未设置：proxy 运维口（/v3/admin/*）不鉴权，经反代暴露后任何人可调用。"
+fi
+
 info "生成 proxy config → $CONFIG_FILE  (auth=$(bool $PROXY_ENABLE_AUTH) session-init=$(bool $PROXY_ENABLE_SESSION_INIT) tdai=$(bool $PROXY_ENABLE_TDAI))"
 cat > "$CONFIG_FILE" <<YAML
 # 由 start-proxy.sh 自动生成 —— 每次启动覆盖，请不要手动改。
@@ -84,6 +105,10 @@ server:
 upstream:
   url: "${PROXY_UPSTREAM_URL}"
   apiKey: "${PROXY_UPSTREAM_API_KEY}"
+${UPSTREAM_AGENTS_YAML}
+
+admin:
+  apiKey: "${TDAI_PROXY_ADMIN_API_KEY}"
 
 log:
   file: ""
@@ -154,7 +179,7 @@ $DOCKER run -d --name "$CONTAINER" \
   --network "$NETWORK" \
   --network-alias proxy \
   --add-host=host.docker.internal:host-gateway \
-  -p "${PROXY_PORT}:8096" \
+  -p "${BIND_HOST:+${BIND_HOST}:}${PROXY_PORT}:8096" \
   -v "$CONFIG_FILE:/data/config.yaml:ro" \
   "$PROXY_IMAGE" >/dev/null
 

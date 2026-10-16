@@ -1,21 +1,21 @@
 /**
- * 内置 provider 注册入口。
+ * Built-in provider registration entry point.
  *
- * 新接入平台的**唯一改动点**：
- *   1. 在同目录建 `<id>.ts`，导出 `<id>Provider: ICodeSourceProvider`
- *   2. 在下面 BUILTIN_PROVIDERS 数组加一行
+ * The **only change points** when onboarding a new platform:
+ *   1. Create `<id>.ts` in this directory, exporting `<id>Provider: ICodeSourceProvider`
+ *   2. Add a line to the BUILTIN_PROVIDERS array below
  *
- * 是否启用某平台由部署环境 `CODE_SOURCE_ENABLED` 决定，与本表解耦。
+ * Whether a platform is enabled is decided by the deployment env `CODE_SOURCE_ENABLED`, decoupled from this table.
  *
- * 例外：`SSH_PROVIDER` 是协议级来源（不是平台），**恒启用**，
- * 因此单独导出、不进 BUILTIN_PROVIDERS（否则会被 CODE_SOURCE_ENABLED 过滤掉）。
+ * Exception: `SSH_PROVIDER` is a protocol-level source (not a platform) and is **always enabled**,
+ * so it is exported separately and not included in BUILTIN_PROVIDERS (otherwise CODE_SOURCE_ENABLED would filter it out).
  */
 
 import type { ICodeSourceProvider } from "../types.js";
 import { gongfengProvider } from "./gongfeng.js";
 import { sshProvider, SSH_PROVIDER_ID } from "./ssh.js";
 
-/** 全部内置 provider（是否启用由 CODE_SOURCE_ENABLED 过滤，不代表全部会展示给用户）。 */
+/** All built-in providers (filtered by CODE_SOURCE_ENABLED; not all are necessarily shown to users). */
 export const BUILTIN_PROVIDERS: readonly ICodeSourceProvider[] = [
   gongfengProvider,
 ];

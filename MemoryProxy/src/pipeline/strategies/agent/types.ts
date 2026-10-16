@@ -1,6 +1,6 @@
 /**
  * AgentStrategy — 按客户端 (claude-code / codebuddy / codex / workbuddy / dsh /
- * opencode / pi / hermes / openclaw / default) 切分的策略接口。
+ * opencode / pi / openclaw / default) 切分的策略接口。
  *
  * 扩展现有 `AgentAdapter` (agent-adapters/types.ts) 增加:
  *   - stage 门控 (StageGates + preset) —— 唯一被 pipeline 真实消费的部分
@@ -10,7 +10,7 @@
  *   - 保持单接口 + 可选方法 (`?.()`) 方案 (§4 未采纳 mixin, 当前 agent 数够用)
  *   - 采纳 preset 模式 (§5) 降低 stageGates 组合复杂度
  *
- * addendum §4.3: `bypassOnPresetFail` 是 pi/hermes/openclaw 三方共用的
+ * addendum §4.3: `bypassOnPresetFail` 是 pi/openclaw 共用的
  * 硬约束, 不是可选特化。
  */
 
@@ -142,7 +142,7 @@ export interface AgentStrategy extends AgentAdapter {
   readonly supportsSessionForm: boolean;
 
   /**
-   * addendum §4.3: pi/hermes/openclaw preset 失败任何场景都 bypass 不弹 form。
+   * addendum §4.3: pi/openclaw preset 失败任何场景都 bypass 不弹 form。
    * 只有 supportsSessionForm=false 的 header-only agent 才置 true。
    *
    * ⚠️ 契约预留, 当前无消费点 (同 `supportsSessionForm`, 原消费点
