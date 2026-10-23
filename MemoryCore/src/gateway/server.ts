@@ -1576,11 +1576,17 @@ export class TdaiGateway {
         `msg="${result.error.message}"`,
       );
     } else {
-      this.logger.info(`Recall completed in ${elapsed}ms: context=${(result.appendSystemContext?.length ?? 0)} chars`);
+      this.logger.info(
+        `Recall completed in ${elapsed}ms: context=${(result.appendSystemContext?.length ?? 0)} chars, ` +
+        `prepend_context=${(result.prependContext?.length ?? 0)} chars`,
+      );
     }
 
     const response: RecallResponse = {
       context: result.appendSystemContext ?? "",
+      // The matched L1 memories (<relevant-memories> block). performAutoRecall returns them in prependContext,
+      // separate from the stable appendSystemContext, and this handler used to drop them.
+      prepend_context: result.prependContext ?? "",
       strategy: result.recallStrategy,
       memory_count: result.recalledL1Memories?.length ?? 0,
       code: result.error?.code ?? 0,

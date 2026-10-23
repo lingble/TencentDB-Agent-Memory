@@ -42,7 +42,10 @@ export interface RecallRequest {
 }
 
 export interface RecallResponse {
+  /** Stable context for the system prompt: persona, scene navigation, memory tools guide. */
   context: string;
+  /** Matched L1 memories (`<relevant-memories>` block) for the user prompt prefix. Empty when nothing matched. */
+  prepend_context?: string;
   strategy?: string;
   memory_count?: number;
   // ── H-15: structured failure signal ──
