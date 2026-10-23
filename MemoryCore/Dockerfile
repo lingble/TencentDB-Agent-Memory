@@ -51,8 +51,12 @@ WORKDIR /build
 # 'edgesOut')`）。升到 11 规避，不影响其它构建行为。
 RUN npm install -g npm@11 --no-audit --no-fund
 
-# Copy package metadata first to maximize Docker layer cache
-COPY package.json ./
+# Copy package metadata first to maximize Docker layer cache.
+# package-lock.json is generated from the patched package.json below (peerDependencies
+# removed + overrides), so `npm ci` installs the exact versions we tested. Regenerate it
+# with the same patch + `npm install --package-lock-only --ignore-scripts --legacy-peer-deps`
+# whenever package.json dependencies change.
+COPY package.json package-lock.json ./
 
 # Patch package.json for npm-friendly install:
 #   1. Strip optional peerDependencies (openclaw, node-llama-cpp) — these
@@ -72,7 +76,7 @@ RUN node -e " \
         fs.writeFileSync('package.json',JSON.stringify(p,null,2)); \
     "
 
-# Generate lockfile + install production deps.
+# Install production deps from the lockfile (npm ci fails if it is out of sync).
 # --omit=optional 精简镜像体积，减少 CI push 超时风险（可选依赖如
 # @clickhouse/client、kafkajs、cos-nodejs-sdk-v5 等在网关镜像中不需要；
 # mongodb 自 2026-09-03 起是正式 dependency —— Mongo 是一等存储后端，不再可裁）。
@@ -80,7 +84,7 @@ RUN node -e " \
 # --legacy-peer-deps relaxes strict peer resolution for older transitive deps.
 # 使用 BuildKit cache mount 缓存 npm 下载缓存，大幅加速重复构建
 RUN --mount=type=cache,id=npm-cache,target=/root/.npm \
-    npm install \
+    npm ci \
         --omit=dev \
         --omit=optional \
         --ignore-scripts \
