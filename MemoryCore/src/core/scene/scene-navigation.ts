@@ -10,10 +10,10 @@ import type { SceneIndexEntry } from "./scene-index.js";
 
 const NAV_HEADER = "---\n## 🗺️ Scene Navigation (Scene Index)";
 
-const NAV_FOOTER_LOCAL = `📌 使用说明：
-- Path 是 scene block 的绝对路径，可直接使用 **read** 工具读取完整内容（参数: filePath）
-- 热度：该场景被记忆命中的累计次数，越高越重要
-- Summary：场景的核心要点摘要`;
+const NAV_FOOTER_LOCAL = `📌 Usage notes:
+- Path is the absolute path of the scene block; read the full content directly with the **read** tool (parameter: filePath)
+- Heat: how many times this scene has been hit by memory recall; higher means more important
+- Summary: the key points of the scene`;
 
 /**
  * Footer for backends addressed by storage key rather than filesystem path.
@@ -21,10 +21,10 @@ const NAV_FOOTER_LOCAL = `📌 使用说明：
  * so it is supplied by whoever assembles the two.
  */
 export function storageNavFooter(readTool: string): string {
-  return `📌 使用说明：
-- Path 是 scene block 的存储路径，请使用 **${readTool}** 工具读取完整内容（参数: path）
-- 热度：该场景被记忆命中的累计次数，越高越重要
-- Summary：场景的核心要点摘要`;
+  return `📌 Usage notes:
+- Path is the storage path of the scene block; read the full content with the **${readTool}** tool (parameter: path)
+- Heat: how many times this scene has been hit by memory recall; higher means more important
+- Summary: the key points of the scene`;
 }
 
 export interface SceneNavigationRenderOptions {
@@ -110,12 +110,12 @@ export function renderSceneNavigation(
 
   const blocks = sorted.map((e) => {
     const pathLine = `### Path: ${opts.pathFor(e)}`;
-    const heatLine = `**热度**: ${e.heat}${heatEmoji(e.heat)}${e.updated ? ` | **更新**: ${e.updated}` : ""}`;
+    const heatLine = `**Heat**: ${e.heat}${heatEmoji(e.heat)}${e.updated ? ` | **Updated**: ${e.updated}` : ""}`;
     const summaryLine = `Summary: ${e.summary}`;
     return `${pathLine}\n${heatLine}\n${summaryLine}`;
   });
 
-  return `${NAV_HEADER}\n*以下是当前场景记忆的索引，可根据需要 ${opts.readTool} 读取详细内容。*\n\n${blocks.join("\n\n")}\n\n${opts.footer}`;
+  return `${NAV_HEADER}\n*Below is the index of the current scene memories. Read the details with ${opts.readTool} when needed.*\n\n${blocks.join("\n\n")}\n\n${opts.footer}`;
 }
 
 /**
