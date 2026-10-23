@@ -49,44 +49,44 @@ interface HttpToolDef {
 const WIKI_TOOLS: HttpToolDef[] = [
   {
     name: "get_info",
-    description: "获取 wiki 元信息（名称、状态、页面数等）。",
+    description: "Get wiki metadata (name, status, page count, and so on).",
     params: {},
   },
   {
     name: "search",
-    description: "BM25 全文搜索 wiki 页面内容。用关键词查找相关文档。",
+    description: "BM25 full-text search over wiki page content. Use keywords to find relevant documents.",
     params: {
-      query: { type: "string", required: true, description: "搜索关键词" },
-      limit: { type: "integer", required: false, default: 20, description: "返回结果数上限" },
+      query: { type: "string", required: true, description: "Search keywords" },
+      limit: { type: "integer", required: false, default: 20, description: "Maximum number of results" },
     },
   },
   {
     name: "list_pages",
-    description: "列出所有页面引用（id + title + path）。",
+    description: "List all page references (id + title + path).",
     params: {},
   },
   {
     name: "read_page",
-    description: "读取指定页面完整内容。",
+    description: "Read the full content of the given pages.",
     params: {
-      refs: { type: "array", required: true, description: "页面引用数组（id 或路径）" },
+      refs: { type: "array", required: true, description: "Array of page references (id or path)" },
     },
   },
   {
     name: "get_graph",
-    description: "获取知识图谱结构（nodes, edges, communities）。",
+    description: "Get the knowledge graph structure (nodes, edges, communities).",
     params: {},
   },
   {
     name: "list_raw",
-    description: "列出原始上传文件。",
+    description: "List the raw uploaded files.",
     params: {},
   },
   {
     name: "read_raw",
-    description: "读取指定原始文件内容。",
+    description: "Read the content of the given raw files.",
     params: {
-      filenames: { type: "array", required: true, description: "文件名数组" },
+      filenames: { type: "array", required: true, description: "Array of file names" },
     },
   },
 ];
@@ -95,84 +95,84 @@ const WIKI_TOOLS: HttpToolDef[] = [
 const CODE_GRAPH_TOOLS: HttpToolDef[] = [
   {
     name: "get_info",
-    description: "获取 code-graph 元信息（仓库名、状态、统计等）。",
+    description: "Get code-graph metadata (repository name, status, statistics, and so on).",
     params: {},
   },
   {
     name: "search",
     description:
-      "按名称快速搜索符号，只返回位置（不含源码）。想直接拿到源码/理解某块代码，请改用 explore。",
+      "Quickly search symbols by name; returns locations only (no source code). To get the source or understand a piece of code, use explore instead.",
     params: {
-      query: { type: "string", required: true, description: "符号名或部分名称（如 \"auth\"、\"signIn\"、\"UserService\"）" },
+      query: { type: "string", required: true, description: "Symbol name or part of a name (for example \"auth\", \"signIn\", \"UserService\")" },
       kind: {
         type: "string",
         required: false,
         enum: ["function", "method", "class", "interface", "type", "variable", "route", "component"],
-        description: "按节点类型过滤。省略则搜索全部类型（不要传 \"any\"/\"symbol\"/\"file\"，这些不是合法值，会导致零结果）。",
+        description: "Filter by node kind. Omit to search all kinds (do not pass \"any\", \"symbol\" or \"file\": they are not valid values and return zero results).",
       },
-      limit: { type: "integer", required: false, default: 10, description: "返回结果数上限" },
+      limit: { type: "integer", required: false, default: 10, description: "Maximum number of results" },
     },
   },
   {
     name: "explore",
     description:
-      "【首选工具】几乎任何问题都先用它：X 怎么工作、架构、定位 bug、某处在哪。一次调用即按文件分组返回相关符号的完整源码（等价于 Read，返回的文件不要再重复读）。query 可以是自然语言问题，也可以是一组符号/文件名。通常一次就够，无需再 search/get_node/读文件。",
+      "[Preferred tool] Use it first for almost any question: how X works, architecture, locating a bug, where something is. One call returns the full source of the relevant symbols grouped by file (equivalent to Read; do not read the returned files again). The query can be a natural-language question or a set of symbol or file names. Usually one call is enough, with no need to search, get_node or read files afterwards.",
     params: {
       query: {
         type: "string",
         required: true,
-        description: "要探索的符号名、文件名或简短代码词（如 \"AuthService loginUser session-manager\"）。可先用 search 找到相关名称。",
+        description: "Symbol names, file names or short code words to explore (for example \"AuthService loginUser session-manager\"). Use search first to find relevant names.",
       },
-      maxFiles: { type: "integer", required: false, default: 12, description: "最多返回源码的文件数（默认 12）" },
+      maxFiles: { type: "integer", required: false, default: 12, description: "Maximum number of files whose source is returned (default 12)" },
     },
   },
   {
     name: "callers",
-    description: "列出调用 <symbol> 的函数。想看完整调用流程请用 explore。",
+    description: "List the functions that call <symbol>. For the full call flow use explore.",
     params: {
-      symbol: { type: "string", required: true, description: "要查调用者的函数/方法/类名" },
-      limit: { type: "integer", required: false, default: 20, description: "返回结果数上限（默认 20）" },
+      symbol: { type: "string", required: true, description: "Function, method or class name to find callers of" },
+      limit: { type: "integer", required: false, default: 20, description: "Maximum number of results (default 20)" },
     },
   },
   {
     name: "callees",
-    description: "列出 <symbol> 调用的函数。想看完整调用流程请用 explore。",
+    description: "List the functions that <symbol> calls. For the full call flow use explore.",
     params: {
-      symbol: { type: "string", required: true, description: "要查被调用者的函数/方法/类名" },
-      limit: { type: "integer", required: false, default: 20, description: "返回结果数上限（默认 20）" },
+      symbol: { type: "string", required: true, description: "Function, method or class name to find callees of" },
+      limit: { type: "integer", required: false, default: 20, description: "Maximum number of results (default 20)" },
     },
   },
   {
     name: "impact",
-    description: "列出修改 <symbol> 会影响到的符号。重构前先用它评估影响面。",
+    description: "List the symbols affected by changing <symbol>. Use it to assess the impact before a refactor.",
     params: {
-      symbol: { type: "string", required: true, description: "要做影响分析的符号名" },
-      depth: { type: "integer", required: false, default: 2, description: "依赖遍历层数（默认 2）" },
+      symbol: { type: "string", required: true, description: "Symbol name to analyze the impact of" },
+      depth: { type: "integer", required: false, default: 2, description: "Dependency traversal depth (default 2)" },
     },
   },
   {
     name: "node",
     description:
-      "【explore 之后的次选】获取单个符号的完整信息：位置、签名、调用链、以及逐字源码（includeCode=true）。名称有重载/多定义时会一次返回全部匹配定义的完整 body；可用 file/line 精确定位某个重载。需要多个相关符号或完整流程时请用 explore。",
+      "[Second choice after explore] Get the full information of a single symbol: location, signature, call chain, and verbatim source (includeCode=true). When the name is overloaded or defined more than once, all matching definitions are returned with their full body; use file or line to pinpoint one overload. When you need several related symbols or the full flow, use explore.",
     params: {
-      symbol: { type: "string", required: true, description: "要查详情的符号名" },
-      includeCode: { type: "boolean", required: false, default: false, description: "是否包含完整源码（默认 false 以节省上下文）" },
-      file: { type: "string", required: false, description: "可选：用文件路径/文件名消歧重载（如 \"harness.rs\"）" },
-      line: { type: "integer", required: false, description: "可选：用行号消歧到该位置附近的定义" },
+      symbol: { type: "string", required: true, description: "Symbol name to get details for" },
+      includeCode: { type: "boolean", required: false, default: false, description: "Whether to include the full source (default false to save context)" },
+      file: { type: "string", required: false, description: "Optional: disambiguate overloads by file path or file name (for example \"harness.rs\")" },
+      line: { type: "integer", required: false, description: "Optional: disambiguate to the definition near this line number" },
     },
   },
   {
     name: "status",
-    description: "索引健康检查（文件/节点/边数量）。除非排查问题，一般不需要。",
+    description: "Index health check (number of files, nodes and edges). Usually not needed unless troubleshooting.",
     params: {},
   },
   {
     name: "files",
-    description: "索引到的文件树，含语言与符号数。查看项目结构比 Glob 更快。",
+    description: "The indexed file tree, with language and symbol counts. Faster than Glob for viewing the project structure.",
     params: {
-      path: { type: "string", required: false, description: "按目录前缀过滤（如 \"src/components\"），不传则返回全部" },
-      pattern: { type: "string", required: false, description: "按 glob 模式过滤（如 \"*.tsx\"、\"**/*.test.ts\"）" },
-      format: { type: "string", required: false, default: "tree", enum: ["tree", "flat", "grouped"], description: "输出格式：tree（层级，默认）、flat（平铺列表）、grouped（按语言分组）" },
+      path: { type: "string", required: false, description: "Filter by directory prefix (for example \"src/components\"); omit to return everything" },
+      pattern: { type: "string", required: false, description: "Filter by glob pattern (for example \"*.tsx\", \"**/*.test.ts\")" },
+      format: { type: "string", required: false, default: "tree", enum: ["tree", "flat", "grouped"], description: "Output format: tree (hierarchical, default), flat (flat list), grouped (grouped by language)" },
     },
   },
 ];
