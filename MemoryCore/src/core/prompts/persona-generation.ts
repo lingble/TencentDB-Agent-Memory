@@ -263,6 +263,20 @@ const TEAM_MEMORY_SYSTEM_PROMPT = `# Team Operating Doctrine Architect
 - ✅ 不要添加场景导航（工程会自动追加 Scene Navigation 和场景索引）
 - ✅ 只操作 \`persona.md\``;
 
+/**
+ * Output language override, appended to the (Chinese) system prompt. The model followed the language of these
+ * instructions, their Chinese section templates and Chinese example file names instead of the language of the input,
+ * so English memories produced Chinese scenes, file names and personas. This takes precedence over everything above.
+ */
+const OUTPUT_LANGUAGE_OVERRIDE = `
+
+## Output language (highest priority, overrides everything above)
+
+The instructions, section templates and example file names above are written in Chinese. That must NOT decide the output language.
+Write all natural-language output in the dominant language of the input memories: English when they are English.
+This applies to section headings, body text and file names. For English input use English headings and English file names
+(ASCII letters, digits and hyphens). Never default to Chinese. META field names and markers such as [DELETED] stay in English.`;
+
 // ============================
 // User Prompt builder (dynamic data)
 // ============================
@@ -323,7 +337,7 @@ ${existingPersonaSection}
 ${iterationGuide}`;
 
   return {
-    systemPrompt: isCodeMode ? TEAM_MEMORY_SYSTEM_PROMPT : PERSONA_SYSTEM_PROMPT,
+    systemPrompt: (isCodeMode ? TEAM_MEMORY_SYSTEM_PROMPT : PERSONA_SYSTEM_PROMPT) + OUTPUT_LANGUAGE_OVERRIDE,
     userPrompt,
   };
 }

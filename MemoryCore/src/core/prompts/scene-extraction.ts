@@ -525,8 +525,23 @@ reason: 具体原因描述
 - **删除文件**：使用 **write**(\`path\`=文件名, \`content\`='[DELETED]') 写入删除标记。系统会自动清理这些文件。**重要**：只有 \`[DELETED]\` 标记会触发系统清理。写入空字符串会被系统拒绝，写入 \`[ARCHIVE]\`、\`[CONSOLIDATED]\` 等标记不会删除文件。`;
 }
 
+/**
+ * Output language override, appended to the (Chinese) system prompt. The model followed the language of these
+ * instructions, their Chinese section templates and Chinese example file names instead of the language of the input,
+ * so English memories produced Chinese scenes, file names and personas. This takes precedence over everything above.
+ */
+const OUTPUT_LANGUAGE_OVERRIDE = `
+
+## Output language (highest priority, overrides everything above)
+
+The instructions, section templates and example file names above are written in Chinese. That must NOT decide the output language.
+Write all natural-language output in the dominant language of the input memories: English when they are English.
+This applies to section headings, body text and file names. For English input use English headings and English file names
+(ASCII letters, digits and hyphens). Never default to Chinese. META field names and markers such as [DELETED] stay in English.`;
+
 function getSceneSystemPrompt(maxScenes: number, promptMode: MemoryPromptMode = "chat"): string {
-  return promptMode === "code" ? buildWorkSceneSystemPrompt(maxScenes) : buildSceneSystemPrompt(maxScenes);
+  const base = promptMode === "code" ? buildWorkSceneSystemPrompt(maxScenes) : buildSceneSystemPrompt(maxScenes);
+  return base + OUTPUT_LANGUAGE_OVERRIDE;
 }
 
 // ============================
