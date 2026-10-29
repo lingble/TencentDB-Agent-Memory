@@ -11,7 +11,11 @@
  */
 
 import type { SessionInitData, AgentOption, TaskOption, TeamOption } from "./types.js";
-import { PATH_SEP, SKIP_LABEL, MORE_LABEL } from "./form.js";
+import { PATH_SEP, SKIP_LABEL, SKIP_LABEL_ZH, MORE_LABEL, MORE_LABEL_ZH } from "./form.js";
+
+// Accept both the current English labels and the legacy Chinese ones.
+const hasSkipLabel = (s: string): boolean => s.includes(SKIP_LABEL) || s.includes(SKIP_LABEL_ZH);
+const hasMoreLabel = (s: string): boolean => s.includes(MORE_LABEL) || s.includes(MORE_LABEL_ZH);
 
 // ── Path A: Match from option text (ask_followup_question click result) ────────
 
@@ -203,7 +207,7 @@ export function extractTeamFromOptionText(
 
   // 检测"本次不关联"→ 直接 bypass（只识别 SKIP_LABEL 精确文本，SKIP_RE 自由
   // 文本兜底已删，见文件顶部说明）
-  if (teamText && teamText.includes(SKIP_LABEL)) {
+  if (teamText && hasSkipLabel(teamText)) {
     return BYPASS_MARKER;
   }
 
@@ -454,13 +458,13 @@ export function extractFromOptionText(
 
   // 检测 Agent 选了"更多 →"→ 翻页（仅在已提取到 agentText 时判断，
   // 避免 content 中表单选项文本里的 label 误触发）
-  if (agentText && agentText.includes(MORE_LABEL)) {
+  if (agentText && hasMoreLabel(agentText)) {
     return { agent_id: MORE_MARKER };
   }
 
   // 检测 Agent 选了"本次不关联"→ bypass（只识别 SKIP_LABEL 精确文本，SKIP_RE
   // 自由文本兜底已删，见文件顶部说明）
-  if (agentText && agentText.includes(SKIP_LABEL)) {
+  if (agentText && hasSkipLabel(agentText)) {
     return { agent_id: BYPASS_MARKER };
   }
 

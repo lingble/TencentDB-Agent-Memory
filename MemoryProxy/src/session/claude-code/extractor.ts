@@ -13,7 +13,21 @@
  */
 
 import type { SessionInitData, TeamOption } from "../types.js";
-import { SKIP_LABEL, MORE_LABEL, ASSET_CONFIRM_YES, ASSET_CONFIRM_NO } from "./form.js";
+import {
+  SKIP_LABEL,
+  SKIP_LABEL_ZH,
+  MORE_LABEL,
+  MORE_LABEL_EN,
+  ASSET_CONFIRM_YES,
+  ASSET_CONFIRM_NO,
+  ASSET_CONFIRM_YES_ZH,
+  ASSET_CONFIRM_NO_ZH,
+} from "./form.js";
+
+// Answers may carry either the English labels (CC form) or the legacy Chinese
+// ones (WorkBuddy re-uses this extractor with its own Chinese form).
+const hasSkipLabel = (s: string): boolean => s.includes(SKIP_LABEL) || s.includes(SKIP_LABEL_ZH);
+const hasMoreLabel = (s: string): boolean => s.includes(MORE_LABEL_EN) || s.includes(MORE_LABEL);
 
 // ── Markers ────────────────────────────────────────────────────────────────────
 
@@ -60,20 +74,20 @@ export function extractAssetConfirm(content: string): boolean | null {
   const allowLoosePattern = answerOnly.length <= 80;
 
   // 精准匹配：完整选项文本
-  if (answerOnly.includes(ASSET_CONFIRM_YES)) {
+  if (answerOnly.includes(ASSET_CONFIRM_YES) || answerOnly.includes(ASSET_CONFIRM_YES_ZH)) {
     return true;
   }
-  if (answerOnly.includes(ASSET_CONFIRM_NO)) {
+  if (answerOnly.includes(ASSET_CONFIRM_NO) || answerOnly.includes(ASSET_CONFIRM_NO_ZH)) {
     return false;
   }
 
   if (allowLoosePattern) {
     // 宽松"是"匹配：必须以"是"或"确认"开头，避免"是否"、"不是"等误匹配
-    if (/^(?:是|确认)[，,\s]/i.test(answerOnly.trim())) {
+    if (/^(?:(?:是|确认)[，,\s]|(?:yes|confirm)\b)/i.test(answerOnly.trim())) {
       return true;
     }
     // 宽松"否"匹配
-    if (/^(?:否|不[，,\s]|跳过|skip)/i.test(answerOnly.trim())) {
+    if (/^(?:否|不[，,\s]|跳过|skip|no\b|don'?t\b)/i.test(answerOnly.trim())) {
       return false;
     }
   }
@@ -218,12 +232,12 @@ export function extractTeamFromOptionText(
 
   // 检测"本次不关联"→ bypass（只识别 SKIP_LABEL 精确文本，SKIP_RE 自由文本
   // 兜底已删，见文件顶部说明）
-  if (teamText && teamText.includes(SKIP_LABEL)) {
+  if (teamText && hasSkipLabel(teamText)) {
     return BYPASS_MARKER;
   }
 
   // 检测 "更多 →" → 翻页 (与 extractFromOptionText / extractTaskFromOptionText 一致)
-  if (teamText && teamText.includes(MORE_LABEL)) {
+  if (teamText && hasMoreLabel(teamText)) {
     return MORE_MARKER;
   }
 
@@ -340,7 +354,7 @@ export function extractTaskFromOptionText(
   if (!answer) return BYPASS_MARKER;
 
   // 翻页
-  if (answer.includes(MORE_LABEL)) return MORE_MARKER;
+  if (hasMoreLabel(answer)) return MORE_MARKER;
 
   // 先尝试正常匹配 —— defaultTaskId 虚拟条目的 label 是"暂时跳过"，能命中
   // matchTaskInTeam 返回 defaultTaskId（不算 BYPASS）。SKIP_RE 自由文本兜底
@@ -375,13 +389,13 @@ export function extractFromOptionText(
   const { agentText, taskText } = extractAgentTaskFromJson(content);
 
   // 检测 "更多 →" → 翻页
-  if (agentText && agentText.includes(MORE_LABEL)) {
+  if (agentText && hasMoreLabel(agentText)) {
     return { agent_id: MORE_MARKER };
   }
 
   // 检测 "本次不关联" → bypass（只识别 SKIP_LABEL 精确文本，SKIP_RE 自由文本
   // 兜底已删，见文件顶部说明）
-  if (agentText && agentText.includes(SKIP_LABEL)) {
+  if (agentText && hasSkipLabel(agentText)) {
     return { agent_id: BYPASS_MARKER };
   }
 

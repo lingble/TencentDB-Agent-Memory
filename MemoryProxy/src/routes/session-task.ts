@@ -199,7 +199,7 @@ function resolveSession(
 const DEFAULT_TASK_DRAFT_TIMEOUT_MS = 20000;
 
 /**
- * 解析 taskDraft LLM 用的上游 apiKey。**严格复刻主链路的 per-agent 三档语义**
+ * 解析 taskDraft LLM 用的上游 apiKey。**严格复刻主链路的 per-agent three-tier semantics**
  * （权威定义见 config.example.yaml 的 upstream.agents 表 / anthropicHandler.ts:1293），
  * 避免 taskDraft 跟主链路用不同的 key 导致鉴权行为不一致：
  *
@@ -244,7 +244,7 @@ function resolveUpstreamApiKeyForAgent(
  *   1) 环境变量覆盖（ops escape hatch，运维部署时完全接管）：
  *        MEMORY_LLM_PROTOCOL / MEMORY_LLM_API_KEY / MEMORY_LLM_BASE_URL / MEMORY_LLM_MODEL
  *   2) 主链路上游（真·跟随主模型，方案 D）：
- *        key   = resolveUpstreamApiKeyForAgent（严格复刻主链路 per-agent 三档语义）
+ *        key   = resolveUpstreamApiKeyForAgent（严格复刻主链路 per-agent three-tier semantics）
  *        url   = handler 透传的 upstreamUrl（已按 per-agent 解析）
  *        model = handler 透传的客户端当次 model
  *   3) taskDraft 专用配置（运维为草稿生成单独配的凭据）：config.memCommand.taskDraft.*
@@ -284,7 +284,7 @@ export function resolveTaskDraftConfig(
     return {
       error:
         "task_draft is not configured (missing model / upstream url / apiKey). " +
-        "Checked: env (MEMORY_LLM_*), main upstream (config.upstream[.agents], per-agent 三档语义), " +
+        "Checked: env (MEMORY_LLM_*), main upstream (config.upstream[.agents], per-agent three-tier semantics), " +
         "config.memCommand.taskDraft — all empty. Set MEMORY_LLM_* env or check handler wiring / config.",
     };
   }
@@ -483,7 +483,7 @@ function buildFallbackTaskTitle(): string {
   const dd = String(now.getDate()).padStart(2, "0");
   const HH = String(now.getHours()).padStart(2, "0");
   const mm = String(now.getMinutes()).padStart(2, "0");
-  return `未命名任务_${yy}${MM}${dd}_${HH}${mm}`;
+  return `Untitled task_${yy}${MM}${dd}_${HH}${mm}`;
 }
 
 // ── 核心：update-task ─────────────────────────────────────────────────────
@@ -503,7 +503,7 @@ export async function updateTaskFromSession(
     return {
       success: false,
       error:
-        "no task bound to this session (session is in \"暂时跳过\" mode or task_id missing); " +
+        "no task bound to this session (session is in \"Skip for now\" mode or task_id missing); " +
         "use mem:create-task to create and bind a new task first",
     };
   }
