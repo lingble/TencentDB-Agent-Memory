@@ -29,15 +29,15 @@ MemoryProxy's v3 endpoints use two envelope kinds, **both different from Volume 
 
 Success is always `code=0, message="ok"`.
 
-### 1.3 Authentication (**only 1 endpoint is authenticated**)
+### 1.3 Authentication (**the ops, rate-limit and session endpoints take the admin Bearer**)
 
 | Endpoint | Auth |
 |---|---|
 | `POST /v3/instance/proxy-destroy` | `Authorization: Bearer <admin.apiKey>`; **public when `admin.apiKey` is not configured** (`checkAdminAuth` lets an empty key through). Uses `timingSafeEqual` for constant-time comparison |
-| `admin/rate-limits` (GET/PUT/DELETE) | **No auth** |
-| `session/refresh-cache`, `session/force-archive-skill` | **No auth** |
+| `admin/rate-limits` (GET/PUT/DELETE), `admin/model-aliases` | `Authorization: Bearer <admin.apiKey>`; **public when `admin.apiKey` is not configured** (same `checkAdminAuth` rule). Enforced by a middleware on `/v3/admin/*` |
+| `session/refresh-cache`, `session/force-archive-skill` | `Authorization: Bearer <admin.apiKey>`; **public when `admin.apiKey` is not configured**. Enforced by a middleware on `/v3/session/*` |
 
-> ⚠️ Implementation and comments disagree: the header comments in `session-refresh.ts` / `session-force-archive.ts` say they "use admin auth (reusing the admin-auth.ts pattern)", but **the handlers never actually call `checkAdminAuth`**, so they are currently unauthenticated. This document records the code's actual behavior; if the frontend/ops rely on auth, it needs separate hardening.
+> The header comments in `session-refresh.ts` / `session-force-archive.ts` say they "use admin auth". The handlers do not call `checkAdminAuth` themselves; the check is done by the `requireAdmin` middleware in `server.ts`, which covers `/v3/admin/*` and `/v3/session/*`.
 
 ### 1.4 Error Code Characteristics (**two groups**)
 
@@ -58,7 +58,7 @@ The ops endpoints in this volume **do not check** `x-tdai-service-id` / `x-tdai-
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/v3/instance/proxy-destroy` | Ops: clear proxy-side instance cache + STS pool (the only authenticated one) |
+| POST | `/v3/instance/proxy-destroy` | Ops: clear proxy-side instance cache + STS pool (admin Bearer) |
 | GET | `/v3/admin/rate-limits` | Get rate-limit config (global / instance override / dimension override) |
 | PUT | `/v3/admin/rate-limits` | Set rate-limit config (global / instance override / dimension override) |
 | DELETE | `/v3/admin/rate-limits` | Delete rate-limit config (restore defaults / remove override) |
@@ -125,7 +125,7 @@ Authorization: Bearer <admin.apiKey>
 
 ---
 
-## 3.2 Rate-Limit Config (3 methods, all unauthenticated)
+## 3.2 Rate-Limit Config (3 methods, admin Bearer)
 
 > Rate limiting has three levels, from highest to lowest priority: **dimension override** (`instance_id + model_id`) > **instance override** (only `instance_id`, applies to every model of that instance) > **global** (`config.rateLimit`).
 >
@@ -201,7 +201,7 @@ Delete the rate-limit config (restore defaults).
 
 ---
 
-## 3.3 Session Management (2, both unauthenticated)
+## 3.3 Session Management (2, admin Bearer)
 
 > Both endpoints are the underlying implementation of the `mem:` commands (via function call) and are also exposed over HTTP for reuse by the panel frontend.
 
@@ -302,7 +302,7 @@ POST /v3/session/force-archive-skill
 |---|---|---|---|
 | Port | 8420 | 8421 | 8096 |
 | Envelope | `{ code, message, request_id, data }` | `{ code, message, data }` | **Two kinds mixed** (see §1.2) |
-| Auth | Layered Bearer + service-id + user-key | `x-tdai-service-id` only | Only proxy-destroy checks Bearer; the rest are unauthenticated |
+| Auth | Layered Bearer + service-id + user-key | `x-tdai-service-id` only | The ops, rate-limit and session endpoints check the admin Bearer (public when `admin.apiKey` is empty) |
 | Methods | All POST | All POST except auto-sync status | **Includes GET/PUT/DELETE** (rate-limits) |
 | Failure code | Three kinds (enum / 5-digit / CODE:detail) | Standard 3-digit | proxy-destroy/rate-limits 3-digit; session/* 5-digit |
 
@@ -310,9 +310,9 @@ POST /v3/session/force-archive-skill
 
 | File | Comment claims | Actual implementation |
 |---|---|---|
-| `session-refresh.ts` | "uses admin auth" | Does not call `checkAdminAuth`; unauthenticated |
-| `session-force-archive.ts` | Same as above (not stated explicitly in the comment, but same family) | Unauthenticated |
-| `admin/rate-limits` | — | Unauthenticated (hardening recommended if protection is needed) |
+| `session-refresh.ts` | "uses admin auth" | Does not call `checkAdminAuth` itself; the `requireAdmin` middleware in `server.ts` does |
+| `session-force-archive.ts` | Same as above (not stated explicitly in the comment, but same family) | Covered by the same `requireAdmin` middleware |
+| `admin/rate-limits` | — | Covered by the `requireAdmin` middleware (fork PR 7) |
 
 ### 4.3 Boundary with the Main LLM Path
 
