@@ -40,9 +40,13 @@ import {
   upsertSource,
   listSources,
   deleteSources,
-  sha256,
+  sha256Bytes,
   type SourceStatus,
 } from "../engines/wiki/index-db.js";
+import { previewModeOf, toPreviewFormat, type PreviewFormat } from "../document-converter/format-registry.js";
+import { getWikiBinaryFileMaxBytes } from "../config.js";
+import { toSourceText } from "../document-converter/index.js";
+import { ConvertError } from "../document-converter/errors.js";
 
 export interface WikiBuildContext {
   wikiId: string;
@@ -144,10 +148,21 @@ export interface RawWriteResult {
   size: number;
 }
 
+/** Content shape written to raw: a string is encoded as utf-8, a Buffer is written to disk as is. */
+export type RawContent = string | Buffer;
+
 export interface RawReadItem {
   filename: string;
   content?: string;
   not_found?: boolean;
+  /** true = `content` is the base64 of the original bytes (native/client form); otherwise it is plain text/HTML. */
+  binary?: boolean;
+  /** The converter id the preview actually used (present only for binary items whose conversion succeeded), for troubleshooting. */
+  converterId?: string;
+  /** Error code of a failed preview (present only for binary items whose conversion failed, see document-converter/errors.ts). */
+  preview_error?: string;
+  /** Preview form: decided by the format registry; the front end picks its renderer from it. */
+  preview_format?: PreviewFormat;
 }
 
 export interface RawWriteManyItem {
@@ -213,7 +228,25 @@ export type WriteOutcome<T> =
   | "too_large";
 
 const PAGE_WRITE_MAX_BYTES = 512 * 1024;
-const RAW_WRITE_MAX_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Upper limit (bytes) for writing to raw.
+ *
+ * It used to be a hard-coded 5MB, which did **not** match the route layer's per-format limit (`maxBytesOf`: text tier
+ * 512KB / rich-document tier 10MB by default, overridable per format): an 8MB docx passed the route check but was
+ * rejected by the service layer at 5MB, so the user saw "upload succeeded but write failed".
+ *
+ * It now uses the rich-document tier limit (the **upper bound** of all formats), which turns the service layer into a
+ * plain safety net (against misuse and internal calls); the real per-format check is done by `maxBytesOf` in the route.
+ */
+function rawWriteMaxBytes(): number {
+  return getWikiBinaryFileMaxBytes();
+}
+
+/** Normalizes written content: a string is encoded as utf-8, a Buffer is returned as is (what lands on disk is the raw bytes). */
+function toRawBuffer(content: RawContent): Buffer {
+  return typeof content === "string" ? Buffer.from(content, "utf-8") : content;
+}
 const PAGE_RM_MAX = 20;
 const RAW_RM_MAX = 50;
 const RAW_READ_MAX = 50;
@@ -575,12 +608,12 @@ export class WikiService {
    * - exceeds RAW_READ_MAX → throws (router converts to 400)
    * A single missing file isn't an error; the corresponding item is marked not_found:true (spec: overall still 200).
    */
-  rawReadMany(
+  async rawReadMany(
     serviceId: string,
     teamId: string,
     wikiId: string,
     filenames: string[],
-  ): WriteOutcome<RawReadItem[]> {
+  ): Promise<WriteOutcome<RawReadItem[]>> {
     const row = this.store.getWiki(serviceId, teamId, wikiId);
     if (!row) return null;
     if (filenames.length > RAW_READ_MAX) {
@@ -597,9 +630,51 @@ export class WikiService {
     const items: RawReadItem[] = [];
     for (let i = 0; i < filenames.length; i++) {
       const filename = filenames[i];
+
+      // The preview form is decided by the **format registry** (single source of truth); this only dispatches and
+      // does not enumerate extensions.
+      const mode = previewModeOf(filename);
+      // binary = this response carries the **original bytes** (base64) rather than plain text; it follows from the
+      // preview form, not from whether the file is binary (md is plain text too, but takes the markdown branch and
+      // returns the original text).
+      const binary = mode === "native" || mode === "client";
+
+      // ① native / client: both return the **original bytes**, with zero conversion on the backend.
+      //    native = the browser's built-in renderer (PDF etc.), client = a dedicated front-end library (docx/xlsx).
+      if (mode === "native" || mode === "client") {
+        let bytes: Buffer;
+        try {
+          bytes = readFileSync(safePaths[i]);
+        } catch {
+          items.push({ filename, not_found: true });
+          continue;
+        }
+        items.push({
+          filename,
+          content: bytes.toString("base64"),
+          binary,
+          preview_format: toPreviewFormat(mode),
+        });
+        continue;
+      }
+
+      // ② converted: no reliable front-end solution, so it goes through the conversion layer to HTML.
+      if (mode === "converted") {
+        let bytes: Buffer;
+        try {
+          bytes = readFileSync(safePaths[i]);
+        } catch {
+          items.push({ filename, not_found: true });
+          continue;
+        }
+        items.push(await this.previewSource(filename, bytes, binary));
+        continue;
+      }
+
+      // ③ markdown: read the original text directly; the front end renders it as Markdown (keeping the styles).
       try {
         const content = readFileSync(safePaths[i], "utf-8");
-        items.push({ filename, content });
+        items.push({ filename, content, preview_format: toPreviewFormat("markdown") });
       } catch {
         items.push({ filename, not_found: true });
       }
@@ -619,7 +694,7 @@ export class WikiService {
     teamId: string,
     wikiId: string,
     filename: string,
-    content: string,
+    content: RawContent,
     userId?: string,
   ): WriteOutcome<RawWriteResult> {
     const row = this.store.getWiki(serviceId, teamId, wikiId);
@@ -631,16 +706,17 @@ export class WikiService {
     // is discarded by the runBuild checkpoint; the new task re-scans all raw by sha256 diff
     // (skipping those already ingested with unchanged sha), so no dirty data gets persisted.
 
-    const size = Buffer.byteLength(content, "utf-8");
-    if (size > RAW_WRITE_MAX_BYTES) return "too_large";
+    const buf = toRawBuffer(content);
+    const size = buf.length;
+    if (size > rawWriteMaxBytes()) return "too_large";
 
     const sourcesDir = join(this.dirFor(serviceId, teamId, wikiId), "raw", "sources");
     const safe = this.resolveRawPath(sourcesDir, filename);
     if (!safe) return "invalid_path";
 
     mkdirSync(sourcesDir, { recursive: true });
-    writeFileSync(safe, content, "utf-8");
-    this.registerSources(serviceId, teamId, wikiId, [{ filename, content, size }], userId);
+    writeFileSync(safe, buf);
+    this.registerSources(serviceId, teamId, wikiId, [{ filename, content: buf, size }], userId);
     return { filename, size };
   }
 
@@ -655,7 +731,7 @@ export class WikiService {
     serviceId: string,
     teamId: string,
     wikiId: string,
-    files: { filename: string; content: string }[],
+    files: { filename: string; content: RawContent }[],
     userId?: string,
   ): WriteOutcome<RawWriteManyItem[]> {
     const row = this.store.getWiki(serviceId, teamId, wikiId);
@@ -669,31 +745,32 @@ export class WikiService {
     type Plan = {
       filename: string;
       safePath: string;
-      content: string;
+      content: Buffer;
       size: number;
-      preExistingContent: string | null; // recorded if it existed before writing; restored on rollback
+      preExistingContent: Buffer | null; // recorded if it existed before writing; restored on rollback
     };
     const plans: Plan[] = [];
     for (const { filename, content } of files) {
-      if (typeof content !== "string") return "invalid_path";
-      const size = Buffer.byteLength(content, "utf-8");
-      if (size > RAW_WRITE_MAX_BYTES) return "too_large";
+      if (typeof content !== "string" && !Buffer.isBuffer(content)) return "invalid_path";
+      const buf = toRawBuffer(content);
+      const size = buf.length;
+      if (size > rawWriteMaxBytes()) return "too_large";
       const safe = this.resolveRawPath(sourcesDir, filename);
       if (!safe) return "invalid_path";
-      let pre: string | null = null;
+      let pre: Buffer | null = null;
       try {
-        pre = readFileSync(safe, "utf-8");
+        pre = readFileSync(safe);
       } catch {
         pre = null;
       }
-      plans.push({ filename, safePath: safe, content, size, preExistingContent: pre });
+      plans.push({ filename, safePath: safe, content: buf, size, preExistingContent: pre });
     }
 
     mkdirSync(sourcesDir, { recursive: true });
     const written: Plan[] = [];
     try {
       for (const p of plans) {
-        writeFileSync(p.safePath, p.content, "utf-8");
+        writeFileSync(p.safePath, p.content);   // Buffer → the raw bytes land on disk
         written.push(p);
       }
     } catch (err) {
@@ -703,7 +780,7 @@ export class WikiService {
           if (p.preExistingContent === null) {
             rmSync(p.safePath, { force: true });
           } else {
-            writeFileSync(p.safePath, p.preExistingContent, "utf-8");
+            writeFileSync(p.safePath, p.preExistingContent);
           }
         } catch {
           // If rollback also fails, all we can do is leave it to the caller to re-run ingest as a fallback
@@ -1104,11 +1181,38 @@ export class WikiService {
    * (check then update: new → uploaded / sha changed → reset to uploaded / sha unchanged → idempotent).
    * Registration failure doesn't block the main write flow (files are already on disk) — logs a warn and leaves it to later ingest/rawLs as a fallback.
    */
+  /**
+   * Builds the preview content of the `converted` form (converted to HTML through the conversion layer).
+   *
+   * A failed conversion does **not throw**: the overall response is still 200 and the item only carries
+   * `preview_error`, so the front end can tell "preview failed" apart from "file does not exist".
+   */
+  private async previewSource(
+    filename: string,
+    bytes: Buffer,
+    binary: boolean,
+  ): Promise<RawReadItem> {
+    try {
+      // format:"html" — the converted form needs HTML that can be rendered directly, not plain text
+      const out = await toSourceText({ filename, bytes, format: "html" });
+      return {
+        filename,
+        content: out.text,
+        binary,
+        converterId: out.converterId,
+        preview_format: toPreviewFormat("converted"),
+      };
+    } catch (err) {
+      const code = err instanceof ConvertError ? err.code : "CONVERT_FAILED";
+      return { filename, binary, preview_error: code };
+    }
+  }
+
   private registerSources(
     serviceId: string,
     teamId: string,
     wikiId: string,
-    files: { filename: string; content: string; size: number }[],
+    files: { filename: string; content: RawContent; size: number }[],
     userId?: string,
   ): void {
     const dir = this.dirFor(serviceId, teamId, wikiId);
@@ -1118,7 +1222,8 @@ export class WikiService {
         for (const f of files) {
           upsertSource(db, {
             filename: f.filename,
-            sha256: sha256(f.content),
+            // The sha is taken over the **raw bytes**: the same basis as the disk scan, so switching the parsing library does not change it
+            sha256: sha256Bytes(toRawBuffer(f.content)),
             size: f.size,
             userId: userId ?? null,
           });

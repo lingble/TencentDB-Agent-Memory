@@ -29,15 +29,15 @@ MemoryProxy's v3 endpoints use two envelope kinds, **both different from Volume 
 
 Success is always `code=0, message="ok"`.
 
-### 1.3 Authentication (**only 1 endpoint is authenticated**)
+### 1.3 Authentication (**the ops, rate-limit and session endpoints take the admin Bearer**)
 
 | Endpoint | Auth |
 |---|---|
 | `POST /v3/instance/proxy-destroy` | `Authorization: Bearer <admin.apiKey>`; **public when `admin.apiKey` is not configured** (`checkAdminAuth` lets an empty key through). Uses `timingSafeEqual` for constant-time comparison |
-| `admin/rate-limits` (GET/PUT/DELETE) | **No auth** |
-| `session/refresh-cache`, `session/force-archive-skill` | **No auth** |
+| `admin/rate-limits` (GET/PUT/DELETE), `admin/model-aliases` | `Authorization: Bearer <admin.apiKey>`; **public when `admin.apiKey` is not configured** (same `checkAdminAuth` rule). Enforced by a middleware on `/v3/admin/*` |
+| `session/refresh-cache`, `session/force-archive-skill` | `Authorization: Bearer <admin.apiKey>`; **public when `admin.apiKey` is not configured**. Enforced by a middleware on `/v3/session/*` |
 
-> ⚠️ Implementation and comments disagree: the header comments in `session-refresh.ts` / `session-force-archive.ts` say they "use admin auth (reusing the admin-auth.ts pattern)", but **the handlers never actually call `checkAdminAuth`**, so they are currently unauthenticated. This document records the code's actual behavior; if the frontend/ops rely on auth, it needs separate hardening.
+> The header comments in `session-refresh.ts` / `session-force-archive.ts` say they "use admin auth". The handlers do not call `checkAdminAuth` themselves; the check is done by the `requireAdmin` middleware in `server.ts`, which covers `/v3/admin/*` and `/v3/session/*`.
 
 ### 1.4 Error Code Characteristics (**two groups**)
 
@@ -58,9 +58,9 @@ The ops endpoints in this volume **do not check** `x-tdai-service-id` / `x-tdai-
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/v3/instance/proxy-destroy` | Ops: clear proxy-side instance cache + STS pool (the only authenticated one) |
-| GET | `/v3/admin/rate-limits` | Get rate-limit config (global / dimension override) |
-| PUT | `/v3/admin/rate-limits` | Set rate-limit config (global / dimension override) |
+| POST | `/v3/instance/proxy-destroy` | Ops: clear proxy-side instance cache + STS pool (admin Bearer) |
+| GET | `/v3/admin/rate-limits` | Get rate-limit config (global / instance override / dimension override) |
+| PUT | `/v3/admin/rate-limits` | Set rate-limit config (global / instance override / dimension override) |
 | DELETE | `/v3/admin/rate-limits` | Delete rate-limit config (restore defaults / remove override) |
 | POST | `/v3/session/refresh-cache` | Refresh the session injection cache (re-fetch agent/task detail + prewarm) |
 | POST | `/v3/session/force-archive-skill` | Manually force-archive the session skill buffer |
@@ -125,22 +125,25 @@ Authorization: Bearer <admin.apiKey>
 
 ---
 
-## 3.2 Rate-Limit Config (3 methods, all unauthenticated)
+## 3.2 Rate-Limit Config (3 methods, admin Bearer)
 
-> Rate limiting has two levels: **global** (`config.rateLimit`) and **dimension override** (`instance_id + model_id`). A dimension override takes precedence over global.
+> Rate limiting has three levels, from highest to lowest priority: **dimension override** (`instance_id + model_id`) > **instance override** (only `instance_id`, applies to every model of that instance) > **global** (`config.rateLimit`).
+>
+> Counting is always done independently per `instance × model`: an instance override means "**each** model of that instance gets this quota on its own", not a single pool shared by all models.
 
 ### GET /v3/admin/rate-limits
 
 Get the rate-limit config.
 
-**Query**: `instance_id` + `model_id` (**must be provided together**).
+**Query**: optional `instance_id` and `model_id` (`model_id` must be used together with `instance_id`).
 
 **Response** `data`:
 
-- Without parameters (global): `{ enabled, tpm, qpm, window_seconds: 60, overrides: [...] }`
-- With instance_id+model_id (dimension): `{ enabled, instance_id, model_id, input_tpm, qpm, source: "global"|"override", global }`
+- Without parameters (global): `{ enabled, tpm, qpm, window_seconds: 60, instance_overrides: [{ instanceId, tpm, qpm }], overrides: [...] }`
+- With only instance_id (instance): `{ enabled, instance_id, input_tpm, qpm, source: "global"|"instance_override", global, model_overrides: [{ model_id, input_tpm, qpm }] }`
+- With instance_id+model_id (dimension, returns the effective value): `{ enabled, instance_id, model_id, input_tpm, qpm, source: "global"|"instance_override"|"override", instance_override, global }`
 
-**Errors**: `400` (only one of instance_id or model_id provided), `503` (store error).
+**Errors**: `400` (only model_id provided / invalid parameters), `503` (store error).
 
 ### PUT /v3/admin/rate-limits
 
@@ -152,12 +155,17 @@ Set the rate-limit config.
 |---|---|---|---|
 | input_tpm | number | Yes | Input tokens/minute, **positive integer** |
 | qpm | number | Yes | Requests/minute, **positive integer** |
-| instance_id | string | No | Paired with model_id |
-| model_id | string | No | Paired with instance_id (≤256, no control characters) |
+| instance_id | string | No | With only instance_id, it sets the instance override (all models of that instance) |
+| model_id | string | No | Must be used together with instance_id (≤256, no control characters) |
+| clear_model_overrides | boolean | No | Only for an instance override; when `true`, it also deletes every dimension override of that instance so the instance quota applies to all models |
 
-**Response** `data`: without a dimension returns `{ tpm, qpm }`; with a dimension returns `{ instance_id, model_id, input_tpm, qpm }`.
+**Response** `data`:
 
-**Errors**: `400` (invalid JSON / not a positive integer / only one dimension field / invalid model_id), `503`.
+- Without a dimension: `{ tpm, qpm }`
+- With only instance_id: `{ instance_id, input_tpm, qpm, cleared_model_overrides, model_overrides: [...] }` (`model_overrides` are the dimension overrides that still take precedence over the instance quota)
+- With instance_id+model_id: `{ instance_id, model_id, input_tpm, qpm }`
+
+**Errors**: `400` (invalid JSON / not a positive integer / only model_id provided / invalid model_id / clear_model_overrides is not a boolean or is used on a non-instance dimension), `503`.
 
 **Example**
 
@@ -168,21 +176,32 @@ PUT /v3/admin/rate-limits
 
 // Response
 { "code": 0, "message": "ok", "data": { "tpm": 100000, "qpm": 300 } }
+
+// Request (adjust every model of one instance, and clear that instance's existing per-model overrides)
+PUT /v3/admin/rate-limits
+{ "instance_id": "mem-xxx", "input_tpm": 2000000, "qpm": 300, "clear_model_overrides": true }
+
+// Response
+{ "code": 0, "message": "ok", "data": { "instance_id": "mem-xxx", "input_tpm": 2000000, "qpm": 300, "cleared_model_overrides": 2, "model_overrides": [] } }
 ```
 
 ### DELETE /v3/admin/rate-limits
 
 Delete the rate-limit config (restore defaults).
 
-**Request body**: optional `instance_id` + `model_id` (paired).
+**Request body**: optional `instance_id` and `model_id` (`model_id` must be used together with `instance_id`).
 
-**Response** `data`: without a dimension returns `{ tpm, qpm }` (falls back to config defaults); with a dimension returns `{ instance_id, model_id, deleted: true }`.
+**Response** `data`:
+
+- Without a dimension: `{ tpm, qpm }` (falls back to config defaults)
+- With only instance_id: `{ instance_id, deleted: true }` (deletes the instance override and leaves that instance's dimension overrides alone)
+- With instance_id+model_id: `{ instance_id, model_id, deleted: true }`
 
 **Errors**: `400`, `503`.
 
 ---
 
-## 3.3 Session Management (2, both unauthenticated)
+## 3.3 Session Management (2, admin Bearer)
 
 > Both endpoints are the underlying implementation of the `mem:` commands (via function call) and are also exposed over HTTP for reuse by the panel frontend.
 
@@ -283,7 +302,7 @@ POST /v3/session/force-archive-skill
 |---|---|---|---|
 | Port | 8420 | 8421 | 8096 |
 | Envelope | `{ code, message, request_id, data }` | `{ code, message, data }` | **Two kinds mixed** (see §1.2) |
-| Auth | Layered Bearer + service-id + user-key | `x-tdai-service-id` only | Only proxy-destroy checks Bearer; the rest are unauthenticated |
+| Auth | Layered Bearer + service-id + user-key | `x-tdai-service-id` only | The ops, rate-limit and session endpoints check the admin Bearer (public when `admin.apiKey` is empty) |
 | Methods | All POST | All POST except auto-sync status | **Includes GET/PUT/DELETE** (rate-limits) |
 | Failure code | Three kinds (enum / 5-digit / CODE:detail) | Standard 3-digit | proxy-destroy/rate-limits 3-digit; session/* 5-digit |
 
@@ -291,9 +310,9 @@ POST /v3/session/force-archive-skill
 
 | File | Comment claims | Actual implementation |
 |---|---|---|
-| `session-refresh.ts` | "uses admin auth" | Does not call `checkAdminAuth`; unauthenticated |
-| `session-force-archive.ts` | Same as above (not stated explicitly in the comment, but same family) | Unauthenticated |
-| `admin/rate-limits` | — | Unauthenticated (hardening recommended if protection is needed) |
+| `session-refresh.ts` | "uses admin auth" | Does not call `checkAdminAuth` itself; the `requireAdmin` middleware in `server.ts` does |
+| `session-force-archive.ts` | Same as above (not stated explicitly in the comment, but same family) | Covered by the same `requireAdmin` middleware |
+| `admin/rate-limits` | — | Covered by the `requireAdmin` middleware (fork PR 7) |
 
 ### 4.3 Boundary with the Main LLM Path
 

@@ -124,6 +124,25 @@ export interface CodeGraphDetail {
   updated_at: string;
 }
 
+/**
+ * A single file-format entry that KS sends to the front end (the **wire contract**, projected by `toWireFormats()`).
+ *
+ * Field compatibility policy:
+ * - Keep `converter` / `note`: the old contract declared them, so they stay for backward compatibility (the front end
+ *   does not read them, but they are not removed, so external integrations never see undefined)
+ * - Drop `htmlPostProcessor` / `markdownPostProcessor` / `nonHtmlPassthrough`: these are KS internals that the old
+ *   contract never declared and that only leaked by accident through a spread
+ */
+export interface WikiFileFormat {
+  ext: string;
+  sizeTier: 'text' | 'binary';
+  /** Per-file size limit in bytes. Optional: a degraded snapshot may not have it. */
+  maxBytes?: number;
+  preview: 'native' | 'client' | 'converted' | 'markdown';
+  converter: 'officeparser' | 'passthrough' | 'none';
+  note?: string;
+}
+
 // ---- Legacy-compatible types (smooth transition) ----
 
 /** @deprecated Use WikiDetail instead */
@@ -494,8 +513,9 @@ export const knowledgeApi = {
     importAndIngest: (params: {
       wiki_id: string;
       mode: 'files' | 'markdown' | 'external' | 'reingest';
-      files?: { filename: string; content: string }[];
-      markdown?: { filename: string; content: string }[];
+      // encoding is passed through to Knowledge: base64 by default, and a hand-pasted MD must say 'utf8' explicitly.
+      files?: { filename: string; content: string; encoding?: 'utf8' | 'base64' }[];
+      markdown?: { filename: string; content: string; encoding?: 'utf8' | 'base64' }[];
       source_url?: string;
       provider_id?: string;
       page_ids?: string[];
@@ -544,17 +564,35 @@ export const knowledgeApi = {
       return { files: d.items ?? [] };
     },
 
-    /** Read a raw file */
-    rawRead: (wikiId: string, filenames: string[]): Promise<{ items: Array<{ filename: string; content?: string; not_found?: boolean }> }> =>
+    /**
+     * Read a raw file (for previews).
+     *
+     * The backend's `preview_format` tells the form: `native`/`client` return the original bytes as base64, `html`
+     * returns the converted HTML, and `markdown` returns the original text. When a conversion fails the item carries
+     * only `preview_error` and no content.
+     */
+    rawRead: (wikiId: string, filenames: string[]): Promise<{ items: Array<{ filename: string; content?: string; not_found?: boolean; binary?: boolean; converterId?: string; preview_error?: string; preview_format?: 'native' | 'client' | 'html' | 'markdown' }> }> =>
       panelPost('/wiki/raw/read', { wiki_id: wikiId, filenames }),
 
     /** Delete a raw source document */
     rawDelete: (wikiId: string, filenames: string[]): Promise<void> =>
       panelPost('/wiki/raw/rm', { wiki_id: wikiId, filenames }),
 
-    /** Upload a raw file */
-    upload: (opts: { teamId: string; wikiId: string; filename: string; content: string }): Promise<void> =>
-      panelPost('/wiki/raw/write', { team_id: opts.teamId, wiki_id: opts.wikiId, files: [{ filename: opts.filename, content: opts.content }] }),
+    /**
+     * Fetch the format registry (the wire contract of KS's `toWireFormats()`).
+     * The front end's allowlist, upload channel, accept attribute and size checks are all derived from it.
+     */
+    formats: (): Promise<{ items: WikiFileFormat[] }> =>
+      panelPost('/wiki/formats', {}),
+
+    /**
+     * Upload a raw file.
+     *
+     * - `encoding='base64'`: the original bytes read from a File go as base64 (docx/pdf/md/txt etc.)
+     * - omitted: for plain text such as a hand-pasted MD, `content` is written to disk as UTF-8 directly
+     */
+    upload: (opts: { teamId: string; wikiId: string; filename: string; content: string; encoding?: 'utf8' | 'base64' }): Promise<void> =>
+      panelPost('/wiki/raw/write', { team_id: opts.teamId, wiki_id: opts.wikiId, files: [{ filename: opts.filename, content: opts.content, encoding: opts.encoding }] }),
 
     allocate: (teamId: string, wikiId: string, agentId: string): Promise<void> =>
       allocateKnowledge(teamId, wikiId, agentId),

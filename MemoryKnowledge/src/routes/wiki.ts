@@ -18,9 +18,10 @@
 
 import { Hono } from "hono";
 
-import type { WikiService } from "../store/index.js";
+import type { WikiService, RawContent } from "../store/index.js";
 import type { WikiSourceManager } from "../engines/wiki/index.js";
 import type { WikiStatus } from "../store/index.js";
+import { maxBytesOf, toWireFormats } from "../document-converter/format-registry.js";
 import {
   extractIdFields,
   isValidIdSegment,
@@ -223,6 +224,20 @@ export function createWikiRoutes(deps: WikiRouteDeps): Hono {
     return c.json(wrapOk({ items: items.map(toWikiDetail), total }));
   });
 
+  /**
+   * Format registry delivery — the only exit of the **single source of truth**.
+   *
+   * The Panel and the front end derive their allowlist, upload channel, size tiers and preview form from it, and no
+   * longer hard-code extension lists. Adding a format only needs one entry in
+   * `document-converter/format-registry.ts`, and the whole chain follows.
+   */
+  app.post("/formats", async (c) => {
+    // Explicit projection: send only the fields the Panel really consumes (including the runtime-computed maxBytes);
+    // backend implementation details (htmlPostProcessor / markdownPostProcessor / note / ...) do not leak through
+    // the API. See the `toWireFormats()` documentation.
+    return c.json(wrapOk({ items: toWireFormats() }));
+  });
+
   // ═══════════════════ File Layer raw/* ═══════════════════
 
   // ── id-only ──
@@ -261,7 +276,7 @@ export function createWikiRoutes(deps: WikiRouteDeps): Hono {
     if (!row) return c.json(wrapError(404, "wiki not found"), 404);
 
     try {
-      const result = wikiService.rawReadMany(serviceId, row.team_id, wikiId, filenames);
+      const result = await wikiService.rawReadMany(serviceId, row.team_id, wikiId, filenames);
       const err = maybeWriteError(result);
       if (err) return err;
       return c.json(wrapOk({ items: result }));
@@ -285,16 +300,15 @@ export function createWikiRoutes(deps: WikiRouteDeps): Hono {
       return c.json(wrapError(400, "files is required (non-empty array)"), 400);
     }
 
-    // Upload size limit (defense in depth; Panel already performs the same check)
-    const MAX_FILE_SIZE = 512 * 1024;
+    // Upload size limit (defense in depth; Panel already performs the same check, and the two thresholds must mean the same)
     const MAX_FILES = 10;
-    const MAX_TOTAL = 5 * 1024 * 1024;
+    const MAX_TOTAL = 20 * 1024 * 1024;
     if (files.length > MAX_FILES) {
       return c.json(wrapError(413, `too many files (max ${MAX_FILES})`), 413);
     }
     let totalSize = 0;
 
-    const validated: { filename: string; content: string }[] = [];
+    const validated: { filename: string; content: RawContent }[] = [];
     for (const item of files) {
       if (!item || typeof item !== "object") {
         return c.json(wrapError(400, "files items must be {filename, content}"), 400);
@@ -306,12 +320,36 @@ export function createWikiRoutes(deps: WikiRouteDeps): Hono {
       if (typeof r.content !== "string") {
         return c.json(wrapError(400, "content must be string for each file"), 400);
       }
-      const size = Buffer.byteLength(r.content, "utf-8");
-      if (size > MAX_FILE_SIZE) {
-        return c.json(wrapError(413, `file too large: ${r.filename} (max ${MAX_FILE_SIZE} bytes)`), 413);
+      // **base64 by default; a missing or utf8 encoding falls back to utf8**:
+      // - The file upload path (readUploadFile → binary files) must send base64, and the backend writes the original
+      //   bytes to disk. UTF-8 decoding is lossy and irreversible for binary data (invalid bytes → U+FFFD).
+      // - Pasting Markdown by hand (useWikiSources `knowledgeApi.wiki.upload({ content })` sends no encoding) writes
+      //   the string to disk as utf8 directly, with no extra base64 round trip.
+      // The two paths split inside the same endpoint, regardless of extension.
+      const encoding = r.encoding === "utf8" ? "utf8" : "base64";
+      let buf: Buffer;
+      try {
+        buf = Buffer.from(r.content, encoding);
+      } catch {
+        return c.json(wrapError(400, `invalid content encoding: ${r.filename}`), 400);
+      }
+      if (encoding === "base64") {
+        // Strict check: Buffer.from silently ignores invalid base64 (producing garbage), so it must be stopped here.
+        // Node's base64 decoding is lenient, so a regex plus a round-trip comparison confirms strict base64.
+        if (!/^[A-Za-z0-9+/]*={0,2}$/.test(r.content) || buf.toString("base64") !== r.content) {
+          return c.json(wrapError(400, `invalid base64 content: ${r.filename}`), 400);
+        }
+      }
+      // Billed by the **raw bytes**: a base64 string is about 33% longer than the raw bytes, so checking the string
+      // length would reject files wrongly
+      const size = buf.length;
+      // The per-file limit depends on the format (per-extension override > sizeTier default), see maxBytesOf
+      const max = maxBytesOf(r.filename);
+      if (size > max) {
+        return c.json(wrapError(413, `file too large: ${r.filename} (max ${max} bytes)`), 413);
       }
       totalSize += size;
-      validated.push({ filename: r.filename, content: r.content });
+      validated.push({ filename: r.filename, content: buf });
     }
     if (totalSize > MAX_TOTAL) {
       return c.json(wrapError(413, `total too large (max ${MAX_TOTAL} bytes)`), 413);
