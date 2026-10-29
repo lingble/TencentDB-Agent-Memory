@@ -21,7 +21,8 @@ import { useTranslation } from 'react-i18next';
 import { Alert, Button, Input, Modal, Select, TabPanel, Tabs, Text } from 'tea-component';
 import { tea } from '@/lib/tea-bridge';
 import { AttachIcon } from 'tea-icons-react';
-import { WIKI_ALLOWED_FILE_RE } from '../constants/wiki-constants';
+import { isAllowedFile, acceptAttr, maxBytesForFile } from '../utils/wiki-format-store';
+import { readUploadFile } from '../utils/wiki-upload-utils';
 import { WikiSourcePageTree } from './wiki-source-page-tree';
 import type {
   SourceProviderFormField,
@@ -31,10 +32,26 @@ import type {
 
 export type ImportMode = 'files' | 'markdown' | 'external' | 'reingest';
 
+/**
+ * A single file entry waiting to be written to raw.
+ *
+ * ⚠️ `encoding` **must be passed through**: the check in Knowledge's `routes/wiki.ts` is
+ * `r.encoding === "utf8" ? "utf8" : "base64"`, i.e. **base64 by default**.
+ * Hand-pasted Markdown is plain text, and without `encoding: 'utf8'` it is stopped by the strict base64 check
+ * (`invalid base64 content: <filename>`). The field used to be missing from this type, so the markdown tab always
+ * failed; the file tab goes through readUploadFile, which brings its own `encoding: 'base64'` (and the content really
+ * is base64), so it always worked.
+ */
+export interface WikiRawFileInput {
+  filename: string;
+  content: string;
+  encoding?: 'utf8' | 'base64';
+}
+
 export interface ImportSubmitPayload {
   mode: ImportMode;
-  files?: { filename: string; content: string }[];
-  markdown?: { filename: string; content: string }[];
+  files?: WikiRawFileInput[];
+  markdown?: WikiRawFileInput[];
   source_url?: string;
   provider_id?: string;
   page_ids?: string[];
@@ -69,9 +86,25 @@ interface Props {
   onSubmit: (payload: ImportSubmitPayload) => void | Promise<void>;
 }
 
-/** Primary button label: semantic per tab (design §2). */
-function primaryLabel(mode: ImportMode, hasInput: boolean, t: (k: string) => string): string {
-  if (!hasInput) return t('wiki.import.reingest');
+/**
+ * Primary button label: semantic per tab (design §2).
+ *
+ * ⚠️ Fixed on 2026-10-21: "no input" used to always show "Re-extract", but the case users actually hit is "content
+ * pasted, file name not filled in yet". There the intent is to **import a new document**, yet the button said
+ * "Re-extract" (and was clickable; clicking it re-ran ingest on the existing material, which is a misoperation).
+ *
+ * Now it falls back to "Re-extract" only when **this tab has no input at all** (that really is a "just re-run the
+ * extraction" request); with any partial input it shows the target action "Upload and extract", and canSubmit
+ * disables it while a required field is missing.
+ */
+function primaryLabel(
+  mode: ImportMode,
+  hasInput: boolean,
+  hasAnyInput: boolean,
+  t: (k: string) => string,
+): string {
+  // No input at all → the user only wants to re-run the extraction
+  if (!hasInput && !hasAnyInput) return t('wiki.import.reingest');
   if (mode === 'external') return t('wiki.import.importAndIngest');
   return t('wiki.import.uploadAndIngest');
 }
@@ -104,10 +137,34 @@ export function ImportAndIngestModal({
   }, [visible, isExternal]);
 
   const addFiles = (incoming: File[]) => {
-    const allowed = incoming.filter((f) => WIKI_ALLOWED_FILE_RE.test(f.name));
-    const rejected = incoming.length - allowed.length;
-    if (rejected > 0) tea.notify.warning(t('wiki.detail.ignored', { count: rejected }));
-    if (allowed.length > 0) setFiles((prev) => [...prev, ...allowed]);
+    // ① Extension allowlist
+    const allowed = incoming.filter((f) => isAllowedFile(f.name));
+    const rejectedFiles = incoming.filter((f) => !isAllowedFile(f.name));
+    // The message lists every supported extension so the user can check for themselves (see i18n wiki.detail.ignored)
+    if (rejectedFiles.length > 0) {
+      tea.notify.warning(t('wiki.detail.ignored', { count: rejectedFiles.length }));
+    }
+
+    // ② Size pre-check: **give feedback as soon as the file is picked** and keep oversize files out of the upload list.
+    // It used to check only the extension, so a big file over the limit was first base64-encoded after clicking
+    // "Upload and extract" (a 36MB file can take seconds to tens of seconds to encode) and then rejected with a 413 by
+    // the backend after a network round trip, so users felt "it hangs for a long time before the error". Now they are told
+    // right after picking.
+    const oversize = allowed.filter((f) => {
+      const max = maxBytesForFile(f.name);
+      return max !== undefined && f.size > max;
+    });
+    for (const f of oversize) {
+      const max = maxBytesForFile(f.name) ?? 0;
+      tea.notify.error(
+        t('wiki.detail.upload.fileTooLarge', {
+          filename: f.name,
+          maxMB: (max / 1024 / 1024).toFixed(1),
+        }),
+      );
+    }
+    const accepted = allowed.filter((f) => !oversize.includes(f));
+    if (accepted.length > 0) setFiles((prev) => [...prev, ...accepted]);
   };
 
   const hasFileInput = files.length > 0;
@@ -128,22 +185,81 @@ export function ImportAndIngestModal({
         ? 'markdown'
         : 'reingest';
   const hasInput = isExternal ? hasExternalInput : tab === 'file' ? hasFileInput : hasMdInput;
-  const canSubmit = !submitting && (hasInput || (!isExternal && !hasInput) || !hasInput);
+
+  /**
+   * Whether this tab has **anything filled in** (even if incomplete).
+   * It tells apart two kinds of "hasInput=false":
+   *   - completely empty → the user wants "Re-extract", so submitting is allowed
+   *   - half filled      → the user wants "Upload and extract" but a required field is missing, so it should be disabled
+   *                        rather than quietly re-ingesting
+   */
+  const hasAnyInput = isExternal
+    ? hasExternalInput || Boolean(ext?.formSourceUrl?.trim()) || Boolean(ext?.formSourceType)
+    : tab === 'file'
+      ? hasFileInput
+      : mdFilename.trim().length > 0 || mdContent.trim().length > 0;
+
+  // Hint for a missing required field: when only the file name or only the content is missing, give clear guidance
+  // instead of disabling the button silently.
+  const missingHint = (() => {
+    if (isExternal) return null;
+    if (tab !== 'markdown') return null;
+    const nameEmpty = mdFilename.trim().length === 0;
+    const contentEmpty = mdContent.trim().length === 0;
+    if (nameEmpty && contentEmpty) return null; // completely empty → goes to re-extract
+    if (nameEmpty) return t('wiki.detail.mdNameRequired', 'Enter a file name (for example note.md)');
+    if (contentEmpty) return t('wiki.detail.mdContentRequired', 'Enter the Markdown content');
+    return null;
+  })();
+
+  const canSubmit = !submitting && !missingHint && (hasInput || (!isExternal && !hasAnyInput) || !hasInput);
 
   const handleSubmit = async () => {
     if (submitting) return;
 
     const payload: ImportSubmitPayload = { mode };
     if (mode === 'files') {
-      const items = await Promise.all(
-        files.map(async (f) => ({
-          filename: f.name,
-          content: await f.text(),
-        })),
-      );
+      // Safety net: the normal path already stops oversize files in addFiles, and checking again here guards against
+      // bypasses (for example a file changed after it was picked). The check runs **before** base64 encoding, so a big
+      // file is not encoded for nothing.
+      const oversize = files.filter((f) => {
+        const max = maxBytesForFile(f.name);
+        return max !== undefined && f.size > max;
+      });
+      if (oversize.length) {
+        for (const f of oversize) {
+          tea.notify.error(
+            t('wiki.detail.upload.fileTooLarge', {
+              filename: f.name,
+              maxMB: ((maxBytesForFile(f.name) ?? 0) / 1024 / 1024).toFixed(1),
+            }),
+          );
+        }
+        return;
+      }
+      // One base64 channel: every format travels as base64, and the server decodes it and writes the original bytes
+      const items = await Promise.all(files.map(readUploadFile));
       payload.files = items;
     } else if (mode === 'markdown') {
-      payload.markdown = [{ filename: mdFilename.trim(), content: mdContent }];
+      // Same pre-check as the files tab: a hand-pasted MD is also stopped by the text-tier limit (512KB by default).
+      // There used to be no check, so an over-long text only got rejected after the full request, and the error text
+      // hard-coded 512KB.
+      const fname = mdFilename.trim();
+      const max = maxBytesForFile(fname);
+      const size = new Blob([mdContent]).size;
+      if (max !== undefined && size > max) {
+        tea.notify.error(
+          t('wiki.detail.upload.fileTooLarge', {
+            filename: fname,
+            maxMB: (max / 1024 / 1024).toFixed(1),
+          }),
+        );
+        return;
+      }
+      // ⚠️ `encoding:'utf8'` must be explicit: Knowledge decodes as base64 by default and validates strictly
+      // (routes/wiki.ts), so a hand-pasted plain-text MD without this marker is judged invalid base64 →
+      // `invalid base64 content: <filename>`.
+      payload.markdown = [{ filename: fname, content: mdContent, encoding: 'utf8' }];
     } else if (mode === 'external' && ext) {
       payload.source_url = ext.formSourceUrl.trim();
       payload.provider_id = ext.formSourceType;
@@ -190,7 +306,7 @@ export function ImportAndIngestModal({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".md,.txt,.markdown"
+                accept={acceptAttr()}
                 multiple
                 className="_wiki-detail-hidden-input"
                 onChange={(e) => {
@@ -384,10 +500,16 @@ export function ImportAndIngestModal({
         </Tabs>
       </Modal.Body>
       <Modal.Footer>
+        {/* A missing required field gets clear guidance, so nobody wonders why the button is grey */}
+        {missingHint && (
+          <Text theme="warning" style={{ marginRight: 12, alignSelf: 'center' }}>
+            {missingHint}
+          </Text>
+        )}
         {/* Design §2.3: the two-phase capability is no longer kept - there's only this one primary button, no secondary button.
             No separate "Import" button below the tree; submission is unified through the footer primary button. */}
         <Button type="primary" onClick={handleSubmit} disabled={!canSubmit} loading={submitting}>
-          {primaryLabel(mode, hasInput, t)}
+          {primaryLabel(mode, hasInput, hasAnyInput, t)}
         </Button>
       </Modal.Footer>
     </Modal>

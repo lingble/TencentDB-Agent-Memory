@@ -37,12 +37,13 @@ import {
   recordSourceIngestResult,
   deleteSources,
   classifySources,
-  sha256,
+  sha256Bytes,
   type SourceStatus,
 } from "./index-db.js";
 import { createLogger } from "../../logger.js";
 import { withSpan } from "../../telemetry.js";
 import { getIngestConcurrency } from "../../config.js";
+import { extractableExtensions } from "../../document-converter/format-registry.js";
 import { slugify } from "./ingest-v2/slug.js";
 import { DEFAULT_SCHEMA, DEFAULT_PURPOSE } from "./ingest-v2/template.js";
 
@@ -575,13 +576,16 @@ export async function runIngestIncremental(
   }
 
   // Scan on-disk sources and compute sha. filename = posix path relative to sourcesDir (matches rawWrite's filename).
-  const disk = findMdFiles(sourcesDir).map((abs) => {
-    const content = readFileSync(abs, "utf-8");
+  // The sha is taken over the **raw bytes** (the same basis rawWrite registers): switching the parsing library or the
+  // conversion config never changes it, so existing files are not mistaken for changed and re-run through the LLM.
+  // For plain text files it equals sha256(utf-8 string).
+  const disk = findSourceFiles(sourcesDir).map((abs) => {
+    const bytes = readFileSync(abs);
     return {
       abs,
       filename: relative(sourcesDir, abs).replace(/\\/g, "/"),
-      sha256: sha256(content),
-      size: Buffer.byteLength(content, "utf-8"),
+      sha256: sha256Bytes(bytes),
+      size: bytes.length,
     };
   });
 
@@ -781,12 +785,24 @@ export async function runIngestIncremental(
   return { results, processed, deletedSources: deleted };
 }
 
-function findMdFiles(dir: string): string[] {
+/**
+ * Scans raw/sources for every **extractable** source file.
+ *
+ * Only formats for which `isExtractable()` is true (`converter !== "none"`) are collected, so formats that cannot be
+ * extracted (images and the like) are left out and ingest does not force a parser onto them and fail.
+ *
+ * The extension set comes from the format registry (the single source of truth): when a format is added only the
+ * registry changes and this scan follows automatically.
+ */
+function findSourceFiles(dir: string): string[] {
+  const exts = extractableExtensions().map((e) => `.${e}`);
   const files: string[] = [];
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
-    if (statSync(full).isDirectory()) files.push(...findMdFiles(full));
-    else if (entry.endsWith(".md") || entry.endsWith(".txt")) files.push(full);
+    if (statSync(full).isDirectory()) files.push(...findSourceFiles(full));
+    else if (exts.some((e) => entry.endsWith(e))) {
+      files.push(full);
+    }
   }
   return files;
 }

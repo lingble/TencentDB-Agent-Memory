@@ -29,6 +29,7 @@ import { isInsideRoot } from "./safe-path.js";
 import { rebuildIndexFile } from "./index-builder.js";
 import { appendIngestLog, appendIngestLogBatch } from "./log-writer.js";
 import { createLogger } from "../../../logger.js";
+import { toSourceText } from "../../../document-converter/index.js";
 
 const log = createLogger("wiki-ingest");
 
@@ -118,9 +119,19 @@ export async function extractSource(
   options: IngestOptions = {},
 ): Promise<Map<string, string>> {
   if (!existsSync(sourcePath)) throw new Error(`Source file does not exist: ${sourcePath}`);
-  const sourceText = readFileSync(sourcePath, "utf-8");
+  // The original file is stored as uploaded. Read it as bytes and hand it to the conversion layer: text files pass
+  // through, rich documents (docx/pdf/...) are converted to plain text. A failed conversion throws ConvertError,
+  // which the try/catch in runIngestIncremental turns into status failed for that source without affecting the
+  // other sources of the same batch.
   const sourceName = basename(sourcePath);
-  if (!sourceText.trim()) throw new Error(`Source file is empty: ${sourceName}`);
+  const { text: sourceText } = await toSourceText({
+    bytes: readFileSync(sourcePath),
+    filename: sourceName,
+  });
+  // The conversion layer already throws a clear error for an empty result (for example a scanned PDF →
+  // SCANNED_PDF_UNSUPPORTED). This is only a fallback: reaching it means the conversion worked but the content
+  // really is empty (for example a blank txt).
+  if (!sourceText.trim()) throw new Error(`Source file content is empty: ${sourceName}`);
 
   const llm = options.llm ?? createLlmClient(llmConfig);
   const template = loadTemplate(projectPath);

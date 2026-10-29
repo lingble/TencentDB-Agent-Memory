@@ -8,8 +8,21 @@ import { knowledgeApi, wikiProgressPercent, wikiStageLabel, type GraphData, type
 import { useTeams, useAgents } from '@/services';
 import { readAuth } from '@/components/LoginGate';
 import { tea, confirmThenRun } from '@/lib/tea-bridge';
-import { findExistingRawFilenames, formatOverwriteFilenames } from '../utils/wiki-upload-utils';
-import { type DetailTab, type SearchResult, type StatusFilter, type SubView, type ViewMode, type WikiScopeTab } from '../constants/wiki-constants';
+import {
+  findExistingRawFilenames,
+  formatOverwriteFilenames,
+  readUploadFile,
+} from '../utils/wiki-upload-utils';
+import { maxBytesForFile } from '../utils/wiki-format-store';
+import {
+  RAW_PREVIEW_ERROR_KEYS,
+  type DetailTab,
+  type SearchResult,
+  type StatusFilter,
+  type SubView,
+  type ViewMode,
+  type WikiScopeTab,
+} from '../constants/wiki-constants';
 
 export function useWikiSources() {
   const { t } = useTranslation();
@@ -340,6 +353,15 @@ export function useWikiSources() {
   const [selectedPage, setSelectedPage] = useState<WikiPage | null>(null);
   const [readContent, setReadContent] = useState('');
   const [readLoading, setReadLoading] = useState(false);
+  // Raw document preview:
+  // - format='native': PDF/HTML/text → the original bytes go to the browser's native renderer (truly lossless)
+  // - format='html'  : OOXML etc. → converted HTML (lossy)
+  // - anything else  : rendered as Markdown
+  // - error: a readable reason when the conversion fails, instead of a blank panel
+  const [rawPreview, setRawPreview] = useState<{
+    format?: 'native' | 'client' | 'html' | 'markdown';
+    error?: string;
+  }>({});
   const [pageTypeFilter, setPageTypeFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -415,6 +437,7 @@ export function useWikiSources() {
     setPages([]);
     setGraphData(null);
     setReadContent('');
+    setRawPreview({});
     setShowAddDoc(false);
   }, [activeTeamId]);
 
@@ -708,27 +731,16 @@ export function useWikiSources() {
   const submitAddAndIngest = async (params: {
     wikiId: string;
     mode: 'files' | 'markdown' | 'external' | 'reingest';
-    files?: { filename: string; content: string }[];
-    markdown?: { filename: string; content: string }[];
+    // encoding must be kept and passed through: Knowledge decodes as base64 by default, and a hand-pasted MD must say
+    // 'utf8' explicitly, otherwise it is judged invalid base64. See the comments in import-and-ingest-modal.tsx.
+    files?: { filename: string; content: string; encoding?: 'utf8' | 'base64' }[];
+    markdown?: { filename: string; content: string; encoding?: 'utf8' | 'base64' }[];
     source_url?: string;
     provider_id?: string;
     page_ids?: string[];
   }): Promise<void> => {
     const { wikiId, mode } = params;
     if (!wikiId) return;
-
-    // Submitting starts a new round: reset the "cleared" flag so the card reappears,
-    // and reset the check count to zero - otherwise the second import would continue counting from the previous one.
-    setIngestCardCleared(false);
-    setPollCount(0);
-    setPollAt('');
-    // Mask "terminal states left by the previous task": from now until the new task actually enters processing,
-    // any ready/failed on this wiki is treated as stale and not shown to the user.
-    setPendingTakeover((prev) => {
-      const next = new Set(prev);
-      next.add(wikiId);
-      return next;
-    });
 
     try {
       const res = await knowledgeApi.wiki.importAndIngest({
@@ -753,6 +765,25 @@ export function useWikiSources() {
         fetchDetail(wikiId);
         return;
       }
+
+      // ✅ Show the progress card only once the compound request is accepted (the task is really queued):
+      // reset the "cleared" flag so the card appears, and reset the check count to zero - otherwise the second
+      // import would continue counting from the previous one.
+      //
+      // ⚠ This reset used to run **before the request was sent**: when an oversize file was rejected with
+      // 413/FILE_TOO_LARGE, the card had already popped up and entered the polling state, so the user saw the
+      // contradictory picture "an error, yet progress is running". It now resets only after acceptance, and a
+      // rejected request shows no progress at all.
+      setIngestCardCleared(false);
+      setPollCount(0);
+      setPollAt('');
+      // Mask "terminal states left by the previous task": from now until the new task actually enters processing,
+      // any ready/failed on this wiki is treated as stale and not shown to the user.
+      setPendingTakeover((prev) => {
+        const next = new Set(prev);
+        next.add(wikiId);
+        return next;
+      });
 
       // Trigger an immediate refresh, so the new state shows without waiting for the next poll tick
       fetchDetail(wikiId);
@@ -799,6 +830,7 @@ export function useWikiSources() {
     setPages([]);
     setGraphData(null);
     setReadContent('');
+    setRawPreview({});
     setSubView('detail');
     fetchDetail(wikiId);
   };
@@ -809,6 +841,8 @@ export function useWikiSources() {
     // would keep the previous document's tags until the new content returns, visually a "flash of the old document".
     setSelectedPage(page);
     setReadContent('');
+    // A wiki page is markdown, rendered as markdown
+    setRawPreview({});
     setReadLoading(true);
     try {
       const r = await knowledgeApi.wiki.read(
@@ -819,6 +853,48 @@ export function useWikiSources() {
     } catch (e: unknown) {
       setReadContent('');
       tea.notify.error((e instanceof Error ? e.message : String(e)) || t('wiki.notify.readPageFailed'));
+    } finally {
+      setReadLoading(false);
+    }
+  };
+
+  /**
+   * Reads a raw document (an uploaded file under raw/sources/) for preview.
+   *
+   * A preview should **render the original document itself**, not turn the content into text and show that:
+   * - Rich documents (docx/pptx/xlsx/pdf/odt/...) → KS converts them to full HTML (keeping paged slides, Excel row and
+   *   column headers, paged pages and other original layouts) → rendered by the front end in a sandboxed iframe;
+   * - Text files (md/txt/csv) → the original text → rendered as Markdown.
+   * The form is told by the backend's `preview_format`, and the front end picks its renderer from it.
+   * When a conversion fails, a readable reason is shown instead of a blank panel.
+   */
+  const handleReadRaw = async (filename: string) => {
+    if (!selectedWikiId) return;
+    setSelectedPage({ path: `raw/${filename}`, title: filename, type: 'raw' });
+    setReadContent('');
+    setRawPreview({});
+    setReadLoading(true);
+    try {
+      const r = await knowledgeApi.wiki.rawRead(selectedWikiId, [filename]);
+      const item = r?.items?.[0];
+      if (!item || item.not_found) {
+        setRawPreview({ error: t('wiki.notify.rawNotFound') });
+        return;
+      }
+      // Look only at preview_error and do not require binary: html/htm are text sources (binary=false), but their
+      // preview also goes through the conversion layer, so a failure needs a readable reason just the same.
+      if (item.preview_error) {
+        setRawPreview({
+          error: RAW_PREVIEW_ERROR_KEYS[item.preview_error] ?? t('wiki.rawPreview.failed'),
+        });
+        return;
+      }
+      setReadContent(item.content || '');
+      setRawPreview({ format: item.preview_format ?? 'markdown' });
+    } catch (e: unknown) {
+      setRawPreview({
+        error: (e instanceof Error ? e.message : String(e)) || t('wiki.notify.readRawFailed'),
+      });
     } finally {
       setReadLoading(false);
     }
@@ -860,6 +936,7 @@ export function useWikiSources() {
         if (selectedPage?.path === `raw/${filename}`) {
           setSelectedPage(null);
           setReadContent('');
+          setRawPreview({});
         }
         await fetchDetail(selectedWikiId);
       },
@@ -966,11 +1043,43 @@ export function useWikiSources() {
       return;
     }
     setUploadProgress(Object.fromEntries(pendingFiles.map((f) => [f.name, 'pending'])));
-    // Upload all files concurrently
+    // Front-end pre-check: stop files over the maxBytes sent down by the format registry, **without sending a request**.
+    // There used to be no such check, so an oversize file went through the whole base64 encoding plus the Panel/KS round
+    // trip before being rejected with a 413, a big file waited for nothing, and the error text hard-coded "512KB" (which
+    // did not match the real tier and misled people).
+    const maxOf = (f: File) => maxBytesForFile(f.name);
+    const oversize = pendingFiles.filter((f) => {
+      const max = maxOf(f);
+      return max !== undefined && f.size > max;
+    });
+    if (oversize.length) {
+      for (const f of oversize) {
+        setUploadProgress((prev) => ({ ...prev, [f.name]: 'error' }));
+        tea.notify.error(
+          t('wiki.detail.upload.fileTooLarge', {
+            filename: f.name,
+            maxMB: ((maxOf(f) ?? 0) / 1024 / 1024).toFixed(1),
+          }),
+        );
+      }
+    }
+    const uploadables = pendingFiles.filter((f) => !oversize.includes(f));
+    if (!uploadables.length) {
+      uploadInFlightRef.current = false;
+      setSubmitting(false);
+      return;
+    }
+    // Upload all files concurrently (only those within the limit)
     const results = await Promise.allSettled(
-      pendingFiles.map(async (f) => {
-        const content = await f.text();
-        await knowledgeApi.wiki.upload({ teamId: activeTeamId, wikiId: selectedWikiId, filename: f.name, content });
+      uploadables.map(async (f) => {
+        const { content, encoding } = await readUploadFile(f);
+        await knowledgeApi.wiki.upload({
+          teamId: activeTeamId,
+          wikiId: selectedWikiId,
+          filename: f.name,
+          content,
+          encoding,
+        });
         setUploadProgress((prev) => ({ ...prev, [f.name]: 'done' }));
       }),
     );
@@ -1109,6 +1218,9 @@ export function useWikiSources() {
     setReadContent,
     readLoading,
     setReadLoading,
+    rawPreview,
+    setRawPreview,
+    handleReadRaw,
     pageTypeFilter,
     setPageTypeFilter,
     searchQuery,

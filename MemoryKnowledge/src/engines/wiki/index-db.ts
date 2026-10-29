@@ -211,6 +211,18 @@ export function sha256(text: string): string {
 }
 
 /**
+ * Computes the SHA-256 over the **raw bytes**, used to register binary source files (docx/pdf/...) and to decide
+ * whether they changed.
+ *
+ * Relation to `sha256()`: for plain text `sha256Bytes(Buffer.from(s,'utf-8')) === sha256(s)`, so the two are
+ * equivalent and the sha of existing md/txt sources does not change, which avoids a full re-run.
+ * They are two functions so that "by bytes" and "by utf-8 string" stay explicit and nobody breaks existing behaviour.
+ */
+export function sha256Bytes(bytes: Buffer): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+/**
  * Registers a source on rawWrite (design §3.4: query then update, not a blind UPSERT). Must be called inside a withWriteDb transaction.
  * - New file → INSERT, status=uploaded, last_modified_by=creator;
  * - sha changed → UPDATE, **keep created_at**, reset to uploaded, record the last modifier, clear ingest_error;

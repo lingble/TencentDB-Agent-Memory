@@ -955,6 +955,8 @@ Two modes:
 
 **AgentEntity response**: `{ agent_id, team_id, owner_user_id, name, description?, prompt?, visibility, status, created_at, updated_at, metadata_json }`.
 
+**get/list read scope**: authenticated by the user key in the request header. `system_admin` and the owner can read (the owner still can after leaving the team); any other user must be an active member of the Agent's team and the Agent must have `visibility=team`. An unauthorized get returns 404; list filters first and then paginates, and `total` counts only visible items.
+
 **Example** (create)
 
 ```json
@@ -984,6 +986,8 @@ Two modes:
 **create request body**: `team_id`, `creator_user_id`, `title`, `description?`, `source_type?` (manual/tapd/github/other), `source_url?`, `status?` (running/completed), `auto_assign_floating_assets?`, `risk_level?`, `metadata_json?`, `linked_agents?` (`[{ agent_id, role_in_task? }]`).
 
 **TaskEntity response**: `{ task_id, team_id, creator_user_id, title, description?, source_type, source_url?, status, auto_assign_floating_assets, risk_level?, created_at, updated_at, metadata_json }`.
+
+**get/list read scope**: `system_admin`, the creator (including after leaving the team) and active members of the owning team can read. An unauthorized get returns 404; list filters first and then paginates, and `total` counts only visible items.
 
 ### 3.7.7 Task-Agent (3)
 
