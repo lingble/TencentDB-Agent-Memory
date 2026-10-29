@@ -3003,14 +3003,10 @@ export class TdaiGateway {
         // before we even started, bail out without doing any work.
         if (signal?.aborted) throw signal.reason ?? new Error("executeL1: aborted before start");
 
-        // Dedup: if triggered by timer but session already processed (count=0), skip
-        if (task.data?.triggeredBy === "timer_scanner" && gateway.stateBackend) {
-          const state = await gateway.stateBackend.getSessionState(instanceId, task.sessionId, teamId, agentId);
-          if (state && state.conversation_count === 0) {
-            gateway.logger.debug?.(`[executor] L1 skipped: session ${task.sessionId} already processed (count=0)`);
-            return;
-          }
-        }
+        // A timer-triggered run used to be skipped when conversation_count was 0. L1 completion zeroes that counter
+        // (pipeline-worker cascadeSchedule), which also erased conversations written while the run was in progress, so
+        // their idle timer fired and was skipped and they were never extracted. The runner is cursor-based and returns
+        // at once when no L0 row is newer than the cursor, so running it again is cheap and never loses data.
 
         // Credit quota check before LLM call
         if (gateway.quotaManager) {

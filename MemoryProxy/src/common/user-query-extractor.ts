@@ -166,6 +166,11 @@ export function extractUserQueryText(raw: string): string {
     /^\s{0,6}\d+\t/,   // cat -n 用 tab 分隔（Read tool 的标准格式）
     // MEMORY.md 相关：CC session_init/memory 命令产生的输出
     /^\s*File .+ has been (updated|created)/i,
+    // CC session-title side-query: once the <session> wrapper is stripped above, its instruction line is all that
+    // is left. It is not something the user typed, and storing it made core run L1 on a title-only batch.
+    /^\s*Write the title in the predominant language of the session\b.*$/i,
+    // CC appends this user text after a deferred tool (ToolSearch) result. Without this rule it was taken as the prompt.
+    /^\s*Tool loaded\.\s*$/,
   ];
   text = text
     .split("\n")
