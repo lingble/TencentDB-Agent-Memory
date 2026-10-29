@@ -809,6 +809,11 @@ export interface AuthConfig {
   url: string;
   /** Request timeout in ms. Default: 5000. */
   timeoutMs: number;
+  /**
+   * Bearer token for the auth service. Set it to core's `TDAI_GATEWAY_API_KEY`
+   * when the gateway lock is on; empty sends no Authorization header.
+   */
+  apiKey: string;
 }
 
 /**
@@ -1125,6 +1130,7 @@ export interface RawYamlConfig {
     enabled?: boolean;
     url?: string;
     timeoutMs?: number;
+    apiKey?: string;
   };
   systemUsers?: Partial<SystemUserEntry>[];
   admin?: {
