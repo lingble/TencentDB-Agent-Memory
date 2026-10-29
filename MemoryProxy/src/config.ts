@@ -602,7 +602,7 @@ export function buildConfig(overrides: CliOverrides = {}): ProxyConfig {
       enabled: yaml.auth?.enabled ?? DEFAULT_CONFIG.auth.enabled,
       url: yaml.auth?.url ?? DEFAULT_CONFIG.auth.url,
       timeoutMs: yaml.auth?.timeoutMs ?? DEFAULT_CONFIG.auth.timeoutMs,
-      apiKey: (yaml.auth?.apiKey ?? DEFAULT_CONFIG.auth.apiKey).trim(),
+      apiKey: expandEnv(yaml.auth?.apiKey ?? DEFAULT_CONFIG.auth.apiKey).trim(),
     },
     // Entries without a non-empty userId are silently dropped — matching is
     // by userId now, and an empty userId would otherwise collide with
@@ -826,7 +826,7 @@ export function buildSkillSelectionConfig(raw: RawSkillSelectionYaml | undefined
  * Expand `${VAR}` / `${VAR:-default}` references in a string using
  * `process.env`. Missing vars with no default become an empty string.
  *
- * Deliberately scoped narrowly (only called from `systemUsers` today) to
+ * Deliberately scoped narrowly (only called from `systemUsers` and `auth.apiKey`) to
  * avoid changing the semantics of other fields where a literal `${...}`
  * might already be in use (regex-adjacent config, prompts, etc).
  */
