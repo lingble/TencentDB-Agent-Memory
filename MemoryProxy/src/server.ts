@@ -1,6 +1,7 @@
 /** Hono app factory — registers all routes. */
 
 import { Hono } from "hono";
+import type { Context, Next } from "hono";
 import { accessKeyMiddleware } from "./accessKeys.js";
 import { runOpenaiChatPipeline } from "./pipeline/runners/openai-chat.js";
 import { runAnthropicPipeline } from "./pipeline/runners/anthropic.js";
@@ -16,6 +17,7 @@ import { createMemoryBridgeHandler } from "./memory/memory-bridge.js";
 import { createInstanceDestroyHandler } from "./routes/instance-destroy.js";
 import { createRateLimitHandlers } from "./routes/rate-limits.js";
 import { createModelAliasHandler } from "./routes/model-aliases.js";
+import { adminAuthError, checkAdminAuth } from "./routes/admin-auth.js";
 import { hasAnalyseMarker, hasCostGuardMarker } from "./routes/whitelist.js";
 import { tryActivateStorage, tryActivateRedis } from "./injection/index.js";
 import { getEffectiveBackend } from "./storage/factory.js";
@@ -154,6 +156,16 @@ export function createApp(config: ProxyConfig): Hono {
   // `proxy-destroy` 动作与 core 区分。鉴权走 config.admin.apiKey（空则公开）。
   const instanceDestroyHandler = createInstanceDestroyHandler(config);
   app.post("/v3/instance/proxy-destroy", (c) => instanceDestroyHandler(c));
+
+  // The admin and session-management routes change shared state (rate limits, session caches), so
+  // they take the admin Bearer like proxy-destroy does. With admin.apiKey empty they stay open.
+  const requireAdmin = async (c: Context, next: Next) => {
+    const auth = checkAdminAuth(c, config.admin.apiKey);
+    if (auth !== "ok") return adminAuthError(c, auth);
+    await next();
+  };
+  app.use("/v3/admin/*", requireAdmin);
+  app.use("/v3/session/*", requireAdmin);
 
   const rateLimitHandlers = createRateLimitHandlers(config);
   app.get("/v3/admin/rate-limits", rateLimitHandlers.get);
