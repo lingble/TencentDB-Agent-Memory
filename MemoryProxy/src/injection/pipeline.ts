@@ -355,18 +355,24 @@ export class InjectionPipeline {
       if (sysMsg) {
         const key = hook.anchor.rawKey
           ?? (hook.anchor.slot ? profile.resolveSlot(hook.anchor.slot) : null);
-        const currentText = getMessageText(sysMsg);
-        const segments = profile.parse(currentText);
-        if (key && segments.some((s) => s.key === key)) {
-          const newSegments = profile.applyAnchor(
-            segments,
-            { key, relation: hook.anchor.relation },
-            text,
-          );
-          // The system message text is authoritative — replace its blocks with
-          // the rebuilt prompt so later hooks see the updated text.
-          sysMsg.blocks = [{ type: "text", content: profile.rebuild(newSegments) }];
-          return; // anchor hit — done
+        // Rewrite only the block that holds the anchor. Claude Code sends `system` as
+        // several blocks: a standalone `x-anthropic-billing-header` block, an identity
+        // line and the main prompt carrying `cache_control`. Merging them into one text
+        // block made Anthropic ignore everything after the merged-in billing header, so
+        // the injected guides never reached the model.
+        if (key) {
+          for (const block of sysMsg.blocks) {
+            if (block.type !== "text") continue;
+            const segments = profile.parse(block.content);
+            if (!segments.some((s) => s.key === key)) continue;
+            const newSegments = profile.applyAnchor(
+              segments,
+              { key, relation: hook.anchor.relation },
+              text,
+            );
+            block.content = profile.rebuild(newSegments);
+            return; // anchor hit — done
+          }
         }
         // Slot unresolved / structure missing → fall through to `point` (warn).
         console.warn(
