@@ -421,6 +421,11 @@ export async function tryReportCreditFromPath(
     return { attempted: false, ok: false };
   }
 
+  // An empty url means credit reporting is switched off: skip quietly instead of failing every request.
+  if (!config.url) {
+    return { attempted: false, ok: false };
+  }
+
   const spaceId = extractSpaceIdFromPath(path);
   if (!spaceId || !usage || Object.keys(usage).length === 0) {
     return { attempted: false, ok: false };
