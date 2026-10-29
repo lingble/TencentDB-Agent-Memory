@@ -482,6 +482,7 @@ auth:
   enabled: true            # 是否启用鉴权
   url: "http://kernel.example.com:8420"   # 内核鉴权服务 base URL（自动拼接 /v3/meta/auth/verify）
   timeoutMs: 5000          # 鉴权请求超时（毫秒）
+  # apiKey: "${TDAI_GATEWAY_API_KEY}"   # Bearer sent to /v3/meta/auth/verify. Required when core has its gateway lock (TDAI_GATEWAY_API_KEY) on; empty = no Authorization header
 
 
 # ── Admin / Ops 端点鉴权（服务级 shared secret） ─────────────────────────────
