@@ -8,7 +8,7 @@
  *   - workbuddy runner:   同上
  *
  * 语义: session-init state machine 完成 reset 流程后, 拿 agent/team/task detail
- * 组装成 "✅ 已重新绑定团队资产" 文案, 通过 buildMemResponse 返回。
+ * 组装成 "✅ Team assets re-linked" 文案, 通过 buildMemResponse 返回。
  * caller 拿返回值直接下发。
  */
 
@@ -44,15 +44,15 @@ export async function stageSessionResetConfirmation(
       ? `- **Team**: ${teamId}`
       : null;
   const lines = bypassed
-    ? ["✅ 已跳过团队资产关联", "", "后续对话不注入任何团队资产（Skill / 记忆 / Knowledge）。"]
+    ? ["✅ Team asset linking skipped", "", "Later conversations will not inject any team assets (Skill / Memory / Knowledge)."]
     : [
-        "✅ 已重新绑定团队资产",
+        "✅ Team assets re-linked",
         "",
         `- **Agent**: ${agentName}${agentIdShort ? ` (${agentIdShort})` : ""}`,
         teamLine,
-        taskName ? `- **Task**: ${taskName}` : "- **Task**: 未关联",
+        taskName ? `- **Task**: ${taskName}` : "- **Task**: not linked",
         "",
-        "后续对话将使用新 Agent 的 Skill、记忆和知识资产。",
+        "Later conversations will use the new Agent's Skill, Memory and Knowledge assets.",
       ].filter(Boolean);
   const text = (lines as string[]).join("\n");
 

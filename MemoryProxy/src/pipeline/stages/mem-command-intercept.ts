@@ -131,7 +131,7 @@ export async function stageMemCommandIntercept(
 
   // 未初始化 → 错误响应
   if (!sessionInfo || injectionSkipped) {
-    const errText = `⚠️ 会话未初始化，命令不可用。请先完成 session 初始化（选择 Team/Agent）后重试。`;
+    const errText = `⚠️ Session is not initialized, so commands are unavailable. Please complete session initialization (select Team/Agent) and try again.`;
     console.log(`[mem-command] cmd=${memCmd.command} args="${truncateArgs(memCmd.args)}" session=${sessionKey} blocked: session not initialized`);
     return buildMemResponse(errText, {
       protocol,

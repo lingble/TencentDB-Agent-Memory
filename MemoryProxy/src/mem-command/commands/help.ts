@@ -5,69 +5,69 @@
 import type { MemCommandContext, MemCommandResult } from "../types.js";
 import { buildMemResponse } from "../response-builder.js";
 
-const HELP_TEXT = `## 支持的 mem: 命令
+const HELP_TEXT = `## Supported mem: commands
 
-| 命令 | 说明 |
-|------|------|
-| \`mem:session-reset\` | 重置本次会话的团队/Agent/任务绑定，立即弹出重新选择 |
-| \`mem:sync\` | 刷新本次会话的全部资产注入（Skill / 记忆 / Knowledge / Task & Agent 描述） |
-| \`mem:create-skill [提示词]\` | 把本次对话归档为 Skill，后台异步提取 |
-| \`mem:create-task [标题]\` | 从当前会话上下文创建 Task 并绑定到本 session |
-| \`mem:update-task [新描述]\` | 更新已绑定 Task 的描述 |
-| \`mem:help\` | 显示本帮助 |
-
----
-
-### 🆕 \`mem:create-task\` — 创建并绑定 Task
-
-**用法**
-- **无参数**：LLM 从最近对话中推断 title + description
-- **有参数**：参数作为 title（40 字截断），LLM 只生成 description
-
-**若本 session 已绑真实 Task**，返回新 Task 预览，回复以下之一：
-
-| 回复 | 效果 |
-|------|------|
-| \`mem:create-task confirm\` | ✅ 覆盖绑定，创建新 Task |
-| \`mem:update-task\` 或 \`mem:update-task <新描述>\` | ⭐ **推荐** — 继续复用当前 Task，只更新描述 |
-| \`mem:create-task cancel\` | 🚫 取消，不做任何改动 |
+| Command | Description |
+|---------|-------------|
+| \`mem:session-reset\` | Reset this session's Team/Agent/Task binding and immediately show the selection form again |
+| \`mem:sync\` | Refresh all asset injection for this session (Skill / Memory / Knowledge / Task & Agent descriptions) |
+| \`mem:create-skill [prompt]\` | Archive this conversation as a Skill, extracted asynchronously in the background |
+| \`mem:create-task [title]\` | Create a Task from the current session context and bind it to this session |
+| \`mem:update-task [new description]\` | Update the description of the bound Task |
+| \`mem:help\` | Show this help |
 
 ---
 
-### ✏️ \`mem:update-task\` — 更新当前 Task 描述
+### 🆕 \`mem:create-task\` — Create and bind a Task
 
-**用法**
-- **无参数**：LLM 对比 "当前 description + 最近对话" 生成新 description
-  - 判无实质改动 → 返回 ℹ️ 无需更新（幂等，可安全重试）
-  - 判有改动 → 返回预览
-- **有参数**：参数直接作为新 description（不调 LLM），返回预览
+**Usage**
+- **No argument**: the LLM infers title + description from the recent conversation
+- **With argument**: the argument is used as the title (truncated to 40 characters); the LLM only generates the description
 
-**确认预览**：
-- ✅ \`mem:update-task confirm\` — 确认
-- 🚫 \`mem:update-task cancel\` — 取消
+**If this session is already bound to a real Task**, a preview of the new Task is returned; reply with one of:
 
-**保护规则**：
-- 若本 session 未绑 Task → 拦截并提示先执行 \`mem:create-task\`
-- 若绑定的 Task 不是你创建的 → 拒绝更新（不支持跨用户改），建议 \`mem:create-task\` 新建一个属于你的
+| Reply | Effect |
+|-------|--------|
+| \`mem:create-task confirm\` | ✅ Overwrite the binding and create the new Task |
+| \`mem:update-task\` or \`mem:update-task <new description>\` | ⭐ **Recommended** — keep using the current Task and only update its description |
+| \`mem:create-task cancel\` | 🚫 Cancel, no changes made |
 
 ---
 
-### 示例
+### ✏️ \`mem:update-task\` — Update the current Task's description
+
+**Usage**
+- **No argument**: the LLM compares "current description + recent conversation" and generates a new description
+  - No substantive change → returns ℹ️ nothing to update (idempotent, safe to retry)
+  - Changes found → returns a preview
+- **With argument**: the argument is used directly as the new description (no LLM call), and a preview is returned
+
+**Confirm the preview**:
+- ✅ \`mem:update-task confirm\` — confirm
+- 🚫 \`mem:update-task cancel\` — cancel
+
+**Protection rules**:
+- If this session has no bound Task → blocked, with a hint to run \`mem:create-task\` first
+- If the bound Task was not created by you → update refused (editing other users' Tasks is not supported); run \`mem:create-task\` to create one of your own
+
+---
+
+### Examples
 
 \`\`\`
 mem:sync
-mem:create-skill 重点总结数据库迁移步骤和踩坑
-mem:create-task 重构 SessionRegistrar
+mem:create-skill focus on the database migration steps and pitfalls
+mem:create-task Refactor SessionRegistrar
 mem:create-task confirm
 mem:create-task cancel
-mem:update-task 补充今天完成的进度与遗留风险
+mem:update-task add today's progress and remaining risks
 mem:update-task confirm
 mem:update-task cancel
 mem:session-reset
 mem:help
 \`\`\`
 
-> 标准格式为 \`mem:<command>\`，冒号后不加空格。命令名大小写不敏感。`;
+> The standard format is \`mem:<command>\`, with no space after the colon. Command names are case-insensitive.`;
 
 export function getHelpText(): string {
   return HELP_TEXT;

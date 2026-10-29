@@ -97,18 +97,18 @@ const SKILL_LISTING_FOOTER =
  * Layout (top → bottom, single joined string):
  *   1. SKILL_LISTING_HEADER — English mandatory-load directive (mirrored
  *      from MemoryCore).
- *   2. Chinese fallback + skill-bridge/curl usage reminder.
+ *   2. Agent-owned skills note + skill-bridge/curl usage reminder.
  *   3. `<available_skills>` listing (verbatim from core).
  *   4. SKILL_LISTING_FOOTER — "only skip if genuinely nothing matches".
  */
 export function wrapAvailableSkillsBlock(listing: string): string {
   return [
     SKILL_LISTING_HEADER,
-    "以下是你（当前 agent）自带的云端 skill 列表。这些 skill 存储在你的 agent 名下，",
-    "优先使用它们完成任务。如果你觉得自带的 skill 不够，可以用 skill_search 工具",
-    "在团队的 skill 库中检索更多（跨 agent 共享）。",
+    "Below is the list of cloud skills that belong to you (the current agent). These skills are stored under your agent,",
+    "so prefer them when doing your task. If you feel your own skills are not enough, you can use the skill_search tool",
+    "to search for more in the team's skill library (shared across agents).",
     "",
-    "**重要：这些 skill 存储在云端，不能使用 read_file / tool_use 直接访问，\n必须用 Bash 执行 curl 调用上方 <skill_tools> 块中的 skill-bridge 工具。**",
+    "**Important: these skills are stored in the cloud and cannot be accessed directly with read_file / tool_use;\nyou MUST run curl in Bash to call the skill-bridge tools in the <skill_tools> block above.**",
     "",
     listing,
     SKILL_LISTING_FOOTER,

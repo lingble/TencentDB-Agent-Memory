@@ -74,12 +74,12 @@ export async function stageSessionResetPreHook(
       const { buildMemResponse } = await import("../../mem-command/response-builder.js");
       console.log(`[mem-command:pre] session-reset unsupported for agent=${agentSource} dshHeadless=${dshHeadless}`);
       const msg = isHeaderOnlyAgent(agentSource)
-        ? `⚠️ mem:session-reset 不支持 ${agentSource} 客户端。\n\n`
-          + `${agentSource} 通过 x-team-id / x-agent-id / x-task-id 请求头预选身份，没有交互式表单入口。\n`
-          + `请在客户端配置中直接更改这些请求头来切换 Team / Agent / Task。`
-        : "⚠️ mem:session-reset 不支持 dsh headless 模式。\n\n"
-          + "dsh 客户端在 headless / no-preset 场景下不挂 ask_user_question tool，无法弹出资产选择表单。\n"
-          + "请在带 ask_user_question preset 的 dsh 环境下使用。";
+        ? `⚠️ mem:session-reset is not supported for the ${agentSource} client.\n\n`
+          + `${agentSource} pre-selects its identity via the x-team-id / x-agent-id / x-task-id request headers and has no interactive form.\n`
+          + `To switch Team / Agent / Task, change these request headers in the client configuration.`
+        : "⚠️ mem:session-reset is not supported in dsh headless mode.\n\n"
+          + "In headless / no-preset scenarios the dsh client does not mount the ask_user_question tool, so the asset selection form cannot be shown.\n"
+          + "Please use it in a dsh environment that has the ask_user_question preset.";
       return buildMemResponse(msg, {
         protocol,
         stream: isStream,
